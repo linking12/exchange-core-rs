@@ -1,4 +1,4 @@
-# Claude Code Configuration for osl-mm-match
+# Claude Code Configuration for exchange-core-rs
 
 > AI-powered development workspace configuration
 
