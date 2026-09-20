@@ -9,6 +9,7 @@ use crate::core::snapshot::module_frame::{decode_module_payload, encode_module_p
 pub enum SerializedModuleType {
     RiskEngine,
     MatchingEngineRouter,
+    ExchangeCore,
 }
 
 impl SerializedModuleType {
@@ -16,6 +17,7 @@ impl SerializedModuleType {
         match self {
             SerializedModuleType::RiskEngine => "RE",
             SerializedModuleType::MatchingEngineRouter => "ME",
+            SerializedModuleType::ExchangeCore => "EC",
         }
     }
 
@@ -118,8 +120,10 @@ mod tests {
     fn module_type_code_and_file_name() {
         assert_eq!(SerializedModuleType::RiskEngine.code(), "RE");
         assert_eq!(SerializedModuleType::MatchingEngineRouter.code(), "ME");
+        assert_eq!(SerializedModuleType::ExchangeCore.code(), "EC");
         assert_eq!(SerializedModuleType::RiskEngine.file_name(88888, 0), "snapshot_88888_RE_0.dat");
         assert_eq!(SerializedModuleType::MatchingEngineRouter.file_name(88888, 1), "snapshot_88888_ME_1.dat");
+        assert_eq!(SerializedModuleType::ExchangeCore.file_name(88888, 0), "snapshot_88888_EC_0.dat");
     }
 
     #[test]

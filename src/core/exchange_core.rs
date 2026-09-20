@@ -159,10 +159,14 @@ impl ExchangeCore {
         let mut w = crate::core::snapshot::chronicle_writer::ChronicleWriter::new();
         self.matching.chronicle_write(&mut w);
         let me = w.into_bytes();
+        let mut cw = crate::core::snapshot::chronicle_writer::ChronicleWriter::new();
+        cw.write_i64(self.results_seq);
+        let cs = cw.into_bytes();
         let ok_re = self.ser_proc.store_data(snapshot_id, 0, 0, SerializedModuleType::RiskEngine, instance_id, &re);
         let ok_me =
             self.ser_proc.store_data(snapshot_id, 0, 0, SerializedModuleType::MatchingEngineRouter, instance_id, &me);
-        ok_re && ok_me
+        let ok_cs = self.ser_proc.store_data(snapshot_id, 0, 0, SerializedModuleType::ExchangeCore, instance_id, &cs);
+        ok_re && ok_me && ok_cs
     }
 
     pub fn recover(&mut self, snapshot_id: i64, instance_id: i32) {
@@ -179,6 +183,12 @@ impl ExchangeCore {
             .expect("ME snapshot module not found");
         self.matching =
             MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me)).expect("ME payload parse failed");
+        if let Some(cs) = self.ser_proc.load_data(snapshot_id, SerializedModuleType::ExchangeCore, instance_id) {
+            match ChronicleReader::new(&cs).read_i64() {
+                Ok(seq) => self.results_seq = seq,
+                Err(e) => log::warn!("EC snapshot module present but unparseable ({e}); results_seq defaults to 0"),
+            }
+        }
         self.restore_non_replicated_state();
     }
 
@@ -1290,6 +1300,33 @@ mod snapshot_tests {
             "loan 索引重建"
         );
         assert!(!restored.risk.liquidation_engine.is_running);
+    }
+
+    #[test]
+    fn snapshot_roundtrip_preserves_results_seq() {
+        let shared = InMemorySerializationProcessor::new();
+        let mut core = build_rich_core(Box::new(shared.clone()));
+        let seq_at_snapshot = core.results_seq;
+        assert!(seq_at_snapshot > 0, "precondition: counter advanced before snapshot");
+        assert!(core.persist(1, 0));
+
+        let mut restored = ExchangeCore::new();
+        restored.with_serialization_processor(Box::new(shared.clone()));
+        restored.recover(1, 0);
+
+        assert_eq!(
+            restored.results_seq,
+            seq_at_snapshot,
+            "results_seq must be restored from the snapshot, not reset to 0"
+        );
+
+        let mut ob = OrderCommand { command: OrderCommandType::OrderBookRequest, symbol: FUT, size: 10, ..Default::default() };
+        restored.process_command(&mut ob);
+        assert_eq!(
+            restored.results_seq,
+            seq_at_snapshot + 1,
+            "next result continues from the restored counter"
+        );
     }
 
     #[test]
