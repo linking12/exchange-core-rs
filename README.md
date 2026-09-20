@@ -49,8 +49,8 @@ MSRV: Rust 1.75 (edition 2021).
 
 ## Quick Start
 
-`ExchangeApi` owns an `ExchangeCore`. Construct it, attach event handlers via `api.core()`, then
-configure → trade → query.
+`ExchangeApi` is a synchronous facade over an `ExchangeCore`. Configure it, submit commands, and read
+the result code back from each call — no handlers required to get started.
 
 ```rust
 use exchange_core_rs::core::exchange_api::{ExchangeApi, PlaceOrderRequest};
@@ -58,27 +58,11 @@ use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecifi
 use exchange_core_rs::core::common::symbol_type::SymbolType;
 use exchange_core_rs::core::common::order_action::OrderAction;
 use exchange_core_rs::core::common::order_type::OrderType;
-use exchange_core_rs::core::trade_events_handler::{
-    TradeEventsHandler, OrderBook, SpotExecutionReport, FuturesExecutionReport,
-};
-use exchange_core_rs::core::fund_events_handler::{FundEventsHandler, FundEventReport};
-
-// You implement two handler traits; e.g. a Raft server publishes events to Kafka.
-struct MyTradeHandler;
-impl TradeEventsHandler for MyTradeHandler {
-    fn order_book(&mut self, _ob: OrderBook) {}
-    fn spot_execution_report(&mut self, _r: SpotExecutionReport) {}
-    fn futures_execution_report(&mut self, _r: FuturesExecutionReport) {}
-}
-struct MyFundHandler;
-impl FundEventsHandler for MyFundHandler {
-    fn fund_event_report(&mut self, _r: FundEventReport) {}
-}
+use exchange_core_rs::core::common::cmd::command_result_code::CommandResultCode;
 
 let mut api = ExchangeApi::new();
-api.core().with_events_handlers(MyTradeHandler, MyFundHandler);
 
-// Configure: currencies (+ scale), symbol, users, deposits.
+// Configure: two currencies, one spot symbol, two funded users.
 api.add_currency(1, 1);
 api.add_currency(2, 1);
 api.add_symbol(CoreSymbolSpecification {
@@ -88,23 +72,97 @@ api.add_symbol(CoreSymbolSpecification {
 });
 api.add_user(1);
 api.add_user(2);
-api.balance_adjustment(1, 1, 1_000_000, 1);
+api.balance_adjustment(1, 1, 1_000_000, 1);   // (uid, currency, amount, txid)
 api.balance_adjustment(2, 2, 10_000_000, 2);
 
-// Trade (spot). A bid must carry reserve_bid_price.
-api.place_order(PlaceOrderRequest { order_id: 5001, uid: 1, symbol: 100, price: 20_000, size: 1,
+// Place a resting ask, then a crossing bid. Each call returns a CommandResultCode.
+let r1 = api.place_order(PlaceOrderRequest { order_id: 5001, uid: 1, symbol: 100, price: 20_000, size: 1,
     reserve_bid_price: 0, action: OrderAction::Ask, order_type: OrderType::Gtc });
-api.place_order(PlaceOrderRequest { order_id: 5002, uid: 2, symbol: 100, price: 20_000, size: 1,
-    reserve_bid_price: 20_000, action: OrderAction::Bid, order_type: OrderType::Gtc });
+let r2 = api.place_order(PlaceOrderRequest { order_id: 5002, uid: 2, symbol: 100, price: 20_000, size: 1,
+    reserve_bid_price: 20_000, action: OrderAction::Bid, order_type: OrderType::Gtc }); // a bid must set reserve_bid_price
+assert_eq!(r1, CommandResultCode::Success);
+assert_eq!(r2, CommandResultCode::Success); // the two orders matched
 
-// Query / reports (read-only).
-assert!(api.total_balance().is_global_zero()); // global balance is net-zero (a hard invariant)
+// Total balance across all accounts is always net-zero — a hard invariant.
+assert!(api.total_balance().is_global_zero());
 ```
 
 The API groups methods by domain (spot / futures / loan) and layer (configure → trade → query →
 report). Futures and lending have dedicated request types (`PlaceFuturesOrderRequest`,
 `ClosePositionRequest`, `loan_create`, `pool_deposit`, …); less common commands go through the generic
 `api.submit(OrderCommand)` entry point.
+
+### Receiving events
+
+To observe fills, order-book snapshots, and fund movements (balances, PnL, fees), implement the two
+handler traits and attach them via `api.core()` before trading. Reports are dispatched synchronously as
+each command is applied — e.g. a Raft server forwards them to Kafka.
+
+```rust
+use exchange_core_rs::core::trade_events_handler::{
+    TradeEventsHandler, OrderBook, SpotExecutionReport, FuturesExecutionReport,
+};
+use exchange_core_rs::core::fund_events_handler::{FundEventsHandler, FundEventReport};
+
+struct MyTradeHandler;
+impl TradeEventsHandler for MyTradeHandler {
+    fn order_book(&mut self, _ob: OrderBook) {}
+    fn spot_execution_report(&mut self, _r: SpotExecutionReport) { /* a spot fill/reject */ }
+    fn futures_execution_report(&mut self, _r: FuturesExecutionReport) { /* a futures fill/reject */ }
+}
+struct MyFundHandler;
+impl FundEventsHandler for MyFundHandler {
+    fn fund_event_report(&mut self, _r: FundEventReport) { /* balance / PnL / fee movement */ }
+}
+
+api.core().with_events_handlers(MyTradeHandler, MyFundHandler);
+```
+
+---
+
+## Raft integration
+
+To run as a Raft state machine, wire up three things through `api.core()`: a command submitter for
+cascaded commands, the apply loop, and snapshots.
+
+```rust
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
+use exchange_core_rs::core::processors::liquidation::command_submitter::CommandSubmitter;
+
+// 1. Command submitter. Cascaded commands (FORCE-liquidation → insurance-fund takeover → ADL,
+//    loan liquidation) are proposed to Raft instead of applied in place. Here we collect them into a
+//    queue; in a cluster, submit() would call raft.propose(cmd).
+struct RaftSubmitter { queue: Rc<RefCell<VecDeque<OrderCommand>>> }
+impl CommandSubmitter for RaftSubmitter {
+    fn submit(&mut self, cmd: OrderCommand) { self.queue.borrow_mut().push_back(cmd); }
+}
+let queue: Rc<RefCell<VecDeque<OrderCommand>>> = Rc::new(RefCell::new(VecDeque::new()));
+api.core().with_command_submitter(Rc::new(RefCell::new(RaftSubmitter { queue: queue.clone() })));
+
+// 2. Apply loop. Feed each committed command to the engine, then drain the cascaded commands it
+//    produced back through the same path until the queue is empty.
+api.submit(committed_cmd);
+loop {
+    let next = queue.borrow_mut().pop_front(); // pop first, releasing the borrow before re-entering submit
+    let Some(cmd) = next else { break };
+    api.submit(cmd);
+}
+
+// 3a. Periodic liquidation scan. The leader ticks its clock; the tick proposes a LIQUIDATION_SCAN
+//     command to Raft, so every node runs the scan deterministically on apply.
+api.core().tick_liquidation_scheduler(now_ms);
+
+// 3b. Snapshots for Raft install-snapshot. persist() writes the RE/ME/EC modules for snapshot_id;
+//     a joining or restarting node calls recover() to load them.
+api.core().persist(snapshot_id, instance_id);
+api.core().recover(snapshot_id, instance_id);
+```
+
+Snapshots use **Chronicle Wire** binary framing (interoperable with the Java `.ecs`/`.dat` snapshots,
+RE/ME modules + LZ4 autodetect). A separate `EC` module stores Rust-side counters (e.g. the result
+sequence) that the Java side does not persist; it is read optionally, so Java/legacy snapshots recover
+cleanly.
 
 ---
 
@@ -145,38 +203,6 @@ domain under `src/core/`.
 | `core::exchange_api` | `ExchangeApi` high-level facade |
 | `core::reports` | Reports: global balance conservation, per-user, insurance fund |
 | `core::utils` | Fixed-point arithmetic (`i128` intermediates, scaling) |
-
----
-
-## Raft integration
-
-Engine-level operations (cascade routing, periodic scan, snapshots) go through `api.core()`.
-`with_command_submitter` takes a shared instance implementing `CommandSubmitter` — in a cluster it
-proposes cascaded commands to Raft instead of applying them in place.
-
-```rust
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
-use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
-use exchange_core_rs::core::processors::liquidation::command_submitter::CommandSubmitter;
-
-struct RaftSubmitter { queue: Rc<RefCell<VecDeque<OrderCommand>>> }
-impl CommandSubmitter for RaftSubmitter {
-    fn submit(&mut self, cmd: OrderCommand) { self.queue.borrow_mut().push_back(cmd); } // real: raft.propose(cmd)
-}
-
-let queue: Rc<RefCell<VecDeque<OrderCommand>>> = Rc::new(RefCell::new(VecDeque::new()));
-api.core().with_command_submitter(Rc::new(RefCell::new(RaftSubmitter { queue: queue.clone() })));
-
-// Periodic scan (leader clock) + snapshot (install-snapshot; RE / ME / EC modules).
-api.core().tick_liquidation_scheduler(now);
-api.core().persist(snapshot_id, instance_id);
-api.core().recover(snapshot_id, instance_id);
-```
-
-Snapshots use **Chronicle Wire** binary framing (interoperable with the Java `.ecs`/`.dat` snapshots,
-RE/ME modules + LZ4 autodetect). A separate `EC` module stores Rust-side counters (e.g. the result
-sequence) that the Java side does not persist; it is read optionally, so Java/legacy snapshots recover
-cleanly.
 
 ---
 

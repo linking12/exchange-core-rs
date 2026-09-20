@@ -45,7 +45,7 @@ MSRV:Rust 1.75(edition 2021)。
 
 ## 快速开始
 
-`ExchangeApi` 持有一个 `ExchangeCore`。构造后经 `api.core()` 挂事件回调,再按 配置 → 交易 → 查询 使用。
+`ExchangeApi` 是 `ExchangeCore` 之上的同步门面。配置好后提交命令,每次调用直接返回结果码 —— 上手不需要任何 handler。
 
 ```rust
 use exchange_core_rs::core::exchange_api::{ExchangeApi, PlaceOrderRequest};
@@ -53,27 +53,11 @@ use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecifi
 use exchange_core_rs::core::common::symbol_type::SymbolType;
 use exchange_core_rs::core::common::order_action::OrderAction;
 use exchange_core_rs::core::common::order_type::OrderType;
-use exchange_core_rs::core::trade_events_handler::{
-    TradeEventsHandler, OrderBook, SpotExecutionReport, FuturesExecutionReport,
-};
-use exchange_core_rs::core::fund_events_handler::{FundEventsHandler, FundEventReport};
-
-// 外部只实现两个 handler trait;例如 Raft server 把事件吐到 Kafka。
-struct MyTradeHandler;
-impl TradeEventsHandler for MyTradeHandler {
-    fn order_book(&mut self, _ob: OrderBook) {}
-    fn spot_execution_report(&mut self, _r: SpotExecutionReport) {}
-    fn futures_execution_report(&mut self, _r: FuturesExecutionReport) {}
-}
-struct MyFundHandler;
-impl FundEventsHandler for MyFundHandler {
-    fn fund_event_report(&mut self, _r: FundEventReport) {}
-}
+use exchange_core_rs::core::common::cmd::command_result_code::CommandResultCode;
 
 let mut api = ExchangeApi::new();
-api.core().with_events_handlers(MyTradeHandler, MyFundHandler);
 
-// 配置:货币(+精度)、symbol、开户、充值。
+// 配置:两种货币、一个现货 symbol、两个已充值用户。
 api.add_currency(1, 1);
 api.add_currency(2, 1);
 api.add_symbol(CoreSymbolSpecification {
@@ -83,22 +67,90 @@ api.add_symbol(CoreSymbolSpecification {
 });
 api.add_user(1);
 api.add_user(2);
-api.balance_adjustment(1, 1, 1_000_000, 1);
+api.balance_adjustment(1, 1, 1_000_000, 1);   // (uid, currency, amount, txid)
 api.balance_adjustment(2, 2, 10_000_000, 2);
 
-// 交易(现货)。买单必须给 reserve_bid_price。
-api.place_order(PlaceOrderRequest { order_id: 5001, uid: 1, symbol: 100, price: 20_000, size: 1,
+// 挂一个卖单,再来一个吃单的买单。每次调用都返回 CommandResultCode。
+let r1 = api.place_order(PlaceOrderRequest { order_id: 5001, uid: 1, symbol: 100, price: 20_000, size: 1,
     reserve_bid_price: 0, action: OrderAction::Ask, order_type: OrderType::Gtc });
-api.place_order(PlaceOrderRequest { order_id: 5002, uid: 2, symbol: 100, price: 20_000, size: 1,
-    reserve_bid_price: 20_000, action: OrderAction::Bid, order_type: OrderType::Gtc });
+let r2 = api.place_order(PlaceOrderRequest { order_id: 5002, uid: 2, symbol: 100, price: 20_000, size: 1,
+    reserve_bid_price: 20_000, action: OrderAction::Bid, order_type: OrderType::Gtc }); // 买单必须给 reserve_bid_price
+assert_eq!(r1, CommandResultCode::Success);
+assert_eq!(r2, CommandResultCode::Success); // 两单成交
 
-// 查询 / 报表(只读)。
-assert!(api.total_balance().is_global_zero()); // 全局账面净零(强不变量)
+// 全部账户的账面总额恒为净零 —— 强不变量。
+assert!(api.total_balance().is_global_zero());
 ```
 
 API 方法按域(现货 / 期货 / 借贷)和层次(配置 → 交易 → 查询 → 报表)分组。期货与借贷有专用请求类型
 (`PlaceFuturesOrderRequest`、`ClosePositionRequest`、`loan_create`、`pool_deposit` 等);冷门命令走通用入口
 `api.submit(OrderCommand)`。
+
+### 接收事件
+
+要观察成交、订单簿快照、资金变动(余额 / PnL / 费用),实现两个 handler trait,并在交易前经 `api.core()` 挂上。
+报告随每条命令 apply **同步分发** —— 例如 Raft server 把它们转发到 Kafka。
+
+```rust
+use exchange_core_rs::core::trade_events_handler::{
+    TradeEventsHandler, OrderBook, SpotExecutionReport, FuturesExecutionReport,
+};
+use exchange_core_rs::core::fund_events_handler::{FundEventsHandler, FundEventReport};
+
+struct MyTradeHandler;
+impl TradeEventsHandler for MyTradeHandler {
+    fn order_book(&mut self, _ob: OrderBook) {}
+    fn spot_execution_report(&mut self, _r: SpotExecutionReport) { /* 现货成交/拒单 */ }
+    fn futures_execution_report(&mut self, _r: FuturesExecutionReport) { /* 期货成交/拒单 */ }
+}
+struct MyFundHandler;
+impl FundEventsHandler for MyFundHandler {
+    fn fund_event_report(&mut self, _r: FundEventReport) { /* 余额 / PnL / 费用变动 */ }
+}
+
+api.core().with_events_handlers(MyTradeHandler, MyFundHandler);
+```
+
+---
+
+## 接入 Raft
+
+作为 Raft 状态机运行时,经 `api.core()` 接好三样东西:级联命令的提交器、apply 循环、快照。
+
+```rust
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
+use exchange_core_rs::core::processors::liquidation::command_submitter::CommandSubmitter;
+
+// 1. 命令提交器。级联命令(FORCE 强平 → 保险基金接管 → ADL,以及 loan 强平)交给 Raft 复制,而非就地 apply。
+//    这里先收进一个队列;集群下 submit() 内部就是 raft.propose(cmd)。
+struct RaftSubmitter { queue: Rc<RefCell<VecDeque<OrderCommand>>> }
+impl CommandSubmitter for RaftSubmitter {
+    fn submit(&mut self, cmd: OrderCommand) { self.queue.borrow_mut().push_back(cmd); }
+}
+let queue: Rc<RefCell<VecDeque<OrderCommand>>> = Rc::new(RefCell::new(VecDeque::new()));
+api.core().with_command_submitter(Rc::new(RefCell::new(RaftSubmitter { queue: queue.clone() })));
+
+// 2. apply 循环。把每条已提交(committed)命令喂进引擎,再把它产生的级联命令沿同一路径排空,直到队列为空。
+api.submit(committed_cmd);
+loop {
+    let next = queue.borrow_mut().pop_front(); // 先取出、释放借用,再重新进入 submit
+    let Some(cmd) = next else { break };
+    api.submit(cmd);
+}
+
+// 3a. 周期强平扫描。leader 推进时钟;每次 tick 把一条 LIQUIDATION_SCAN 命令交 Raft 复制,
+//     于是每个节点在 apply 时确定性地执行扫描。
+api.core().tick_liquidation_scheduler(now_ms);
+
+// 3b. 供 Raft install-snapshot 的快照。persist() 为 snapshot_id 写出 RE/ME/EC 三个模块;
+//     新加入或重启的节点调用 recover() 载入。
+api.core().persist(snapshot_id, instance_id);
+api.core().recover(snapshot_id, instance_id);
+```
+
+快照走 **Chronicle Wire** 二进制分帧(与 Java `.ecs`/`.dat` 快照互通,RE/ME 模块 + LZ4 自动探测)。
+另有独立的 `EC` 模块存放 Rust 侧计数器(如结果序列号)—— Java 侧不持久化这些;该模块按可选读取,故 Java/旧快照也能干净恢复。
 
 ---
 
@@ -137,35 +189,6 @@ process_command(cmd):
 | `core::exchange_api` | `ExchangeApi` 高层门面 |
 | `core::reports` | 报表:全局余额守恒、单用户、保险基金 |
 | `core::utils` | 定点算术(`i128` 中间量、缩放) |
-
----
-
-## 接入 Raft
-
-引擎级操作(级联去向、周期扫描、快照)都经 `api.core()`。`with_command_submitter` 收一个实现
-`CommandSubmitter` 的共享实例 —— 集群下把级联命令交给 Raft 复制,而非就地 apply。
-
-```rust
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
-use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
-use exchange_core_rs::core::processors::liquidation::command_submitter::CommandSubmitter;
-
-struct RaftSubmitter { queue: Rc<RefCell<VecDeque<OrderCommand>>> }
-impl CommandSubmitter for RaftSubmitter {
-    fn submit(&mut self, cmd: OrderCommand) { self.queue.borrow_mut().push_back(cmd); } // 实际:raft.propose(cmd)
-}
-
-let queue: Rc<RefCell<VecDeque<OrderCommand>>> = Rc::new(RefCell::new(VecDeque::new()));
-api.core().with_command_submitter(Rc::new(RefCell::new(RaftSubmitter { queue: queue.clone() })));
-
-// 周期扫描(leader 时钟)+ 快照(install-snapshot;RE / ME / EC 模块)。
-api.core().tick_liquidation_scheduler(now);
-api.core().persist(snapshot_id, instance_id);
-api.core().recover(snapshot_id, instance_id);
-```
-
-快照走 **Chronicle Wire** 二进制分帧(与 Java `.ecs`/`.dat` 快照互通,RE/ME 模块 + LZ4 自动探测)。
-另有独立的 `EC` 模块存放 Rust 侧计数器(如结果序列号)—— Java 侧不持久化这些;该模块按可选读取,故 Java/旧快照也能干净恢复。
 
 ---
 
