@@ -118,20 +118,7 @@ impl LiquidationService {
         pos.open_price_sum += spend;
     }
 
-    /// Per-user pure profitability scan, extracted from the former
-    /// `compute_profitable_positions_by_symbol` loop body. Read-only (`&UserProfile`): structurally
-    /// safe to run in parallel via `TwoStepCommandProcessor::map_users`, which only ever hands the
-    /// mapped closure a shared `&UserProfile`.
-    ///
-    /// Returns each eligible position as `(symbol, candidate)`. For CROSS positions the returned
-    /// candidate's `adl_eligibility` already carries the freshly computed, clamped factor -- unlike
-    /// the old code, this function never writes that factor back into the live
-    /// `UserProfile.positions[..]` record (it can't: it only has read access). `adl_eligibility` is
-    /// a non-replicated, scan-scratch field excluded from `state_hash` (see
-    /// `SymbolPositionRecord`'s dedicated test), so per-command ranking (which only ever consumes
-    /// the freshly-returned candidate, never the live field) is unaffected; the live write-back is
-    /// preserved only in the serial wrapper below, for callers that rely on observing it.
-    pub fn profit_one(
+    pub fn user_profitable_positions(
         profile: &UserProfile,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
@@ -171,11 +158,11 @@ impl LiquidationService {
         out
     }
 
-    /// Serial fold of `profit_one` over every user. As of the parallel-scan refactor the ADL
-    /// path scans via `profit_one` + `map_users` directly, so this method has no in-crate
+    /// Serial fold of `user_profitable_positions` over every user. As of the parallel-scan refactor the ADL
+    /// path scans via `user_profitable_positions` + `map_users` directly, so this method has no in-crate
     /// non-test callers; it is retained as public API and additionally performs the live
     /// write-back of the computed CROSS `adl_eligibility` factor into `UserProfileService`,
-    /// which the read-only `profit_one` cannot do. That write-back is safe to omit on the ADL
+    /// which the read-only `user_profitable_positions` cannot do. That write-back is safe to omit on the ADL
     /// path because `adl_eligibility` is non-replicated scratch (excluded from `state_hash`,
     /// recomputed each scan). If a caller ever needs the live write-back it should be proven by
     /// a real caller rather than this wrapper.
@@ -191,7 +178,7 @@ impl LiquidationService {
             let Some(profile) = ups.users.get(&uid) else {
                 continue;
             };
-            let per_user = Self::profit_one(profile, ssp, last_price_cache);
+            let per_user = Self::user_profitable_positions(profile, ssp, last_price_cache);
 
             if let Some(profile_mut) = ups.users.get_mut(&uid) {
                 for (_, candidate) in &per_user {

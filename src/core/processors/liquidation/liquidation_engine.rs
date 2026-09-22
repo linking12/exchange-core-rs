@@ -40,9 +40,7 @@ enum IsolatedCheck {
     Healthy,
 }
 
-/// Pure per-user scan result: `decide_user`'s read-only output, consumed by
-/// `apply_scan_outcome`. See spec §4.3 (decide/apply co-located pair).
-struct UserScanOutcome {
+struct LiquidationAssessment {
     decisions: Vec<LiquidationDecision>,
     alerts: Vec<FundEvent>,
 }
@@ -105,11 +103,9 @@ impl LiquidationEngine {
         } else {
             ups.users.keys().copied().filter(|&uid| Self::covered_by_scan_slice(cmd, uid)).collect()
         };
-        // Parallel read-only decision phase (per-uid, order-preserving) — see spec §4.3.
-        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|p| (uid, Self::decide_user(uid, p, ssp, last_price_cache))));
-        // Serial apply phase, in uid-ascending order (uids is already ordered) — byte-identical to serial.
+        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|p| (uid, Self::decide_user_liquidation(uid, p, ssp, last_price_cache))));
         for (uid, outcome) in outcomes.into_iter().flatten() {
-            self.apply_scan_outcome(uid, outcome, ups, ssp, last_price_cache, cmd.timestamp, fund_events);
+            self.apply_user_liquidation(uid, outcome, ups, ssp, last_price_cache, cmd.timestamp, fund_events);
         }
 
         if targeted {
@@ -125,16 +121,12 @@ impl LiquidationEngine {
         self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events, pool);
     }
 
-    /// Pure read-only decision phase for one user (was `check_user`'s A-segment).
-    /// Reused by `check_isolated_decision`/`check_cross_decisions`; alert events accumulate
-    /// into the LOCAL `outcome.alerts`, never a shared `fund_events` — this is what makes it
-    /// safe to run under `ComputePool::map` (no shared mutable output, see spec §3/§4.3).
-    fn decide_user(
+    fn decide_user_liquidation(
         uid: i64,
         profile: &UserProfile,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
-    ) -> UserScanOutcome {
+    ) -> LiquidationAssessment {
         let mut decisions = Vec::new();
         let mut alerts = Vec::new();
         let mut cross_by_currency: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
@@ -164,18 +156,14 @@ impl LiquidationEngine {
             }
         }
         Self::check_cross_decisions(uid, profile, &cross_by_currency, ssp, last_price_cache, &mut decisions, &mut alerts);
-        UserScanOutcome { decisions, alerts }
+        LiquidationAssessment { decisions, alerts }
     }
 
-    /// Serial write phase for one user (was `check_user`'s B-segment): first flush this user's
-    /// alert events (same order as the old inline push), then push a LiquidationAlert + start the
-    /// liquidation flow for each decision, in decision order — byte-identical to the old serial
-    /// `check_user`, whatever thread `decide_user` actually ran on.
     #[allow(clippy::too_many_arguments)]
-    fn apply_scan_outcome(
+    fn apply_user_liquidation(
         &mut self,
         uid: i64,
-        outcome: UserScanOutcome,
+        outcome: LiquidationAssessment,
         ups: &mut UserProfileService,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,

@@ -29,13 +29,6 @@ pub struct FundingPaymentAndRecvNotional {
     pub receiver_notionals: BTreeMap<i64, i64>,
 }
 
-/// One user's contribution to a funding-fee settlement round. Pure, order-independent:
-/// safe to compute for any user on any thread (read-only borrow of `UserProfile`).
-///
-/// `payer_fee`/`receiver_notional` are `Some` exactly when the original serial scan would
-/// have inserted into `payer_amounts`/`receiver_notionals` respectively (so e.g. a HEDGE user
-/// with both a long and a short leg on the funding symbol can produce both -- they are not
-/// mutually exclusive at the *map-insertion* level, only per-leg).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FundingContribution {
     uid: i64,
@@ -43,10 +36,7 @@ struct FundingContribution {
     receiver_notional: Option<i64>,
 }
 
-/// Per-user pure funding computation extracted from the former `collect_input` loop body.
-/// Handles both the primary `symbol` leg and, for HEDGE-mode users, the `-symbol` leg.
-/// Returns `None` when the user has no funding contribution at all.
-fn fund_one(
+fn user_funding_contribution(
     user: &UserProfile,
     symbol: i32,
     mark_price: i64,
@@ -85,10 +75,7 @@ fn fund_one(
     }
 }
 
-/// Folds per-user contributions into the two global `BTreeMap`s. Uids are disjoint across
-/// distinct `UserProfile`s, so insertion order does not affect the result -- safe to call
-/// with parts produced by a parallel (or serial) per-user scan in any order.
-fn merge_shards(parts: impl Iterator<Item = FundingContribution>) -> FundingPaymentAndRecvNotional {
+fn merge_funding_contributions(parts: impl Iterator<Item = FundingContribution>) -> FundingPaymentAndRecvNotional {
     let mut shard = FundingPaymentAndRecvNotional::default();
     for c in parts {
         if let Some(fee) = c.payer_fee {
@@ -124,9 +111,9 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
         let parts = self.map_users(
             ctx,
             |u| u.user_status == UserStatus::Active,
-            |u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k),
+            |u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k),
         );
-        let shard = merge_shards(parts.into_iter().flatten());
+        let shard = merge_funding_contributions(parts.into_iter().flatten());
         let events = Self::build_matcher_events(std::slice::from_ref(&shard));
         if let Some(&(_shard_id, amount)) = events.first() {
             cmd.funding_fee_event = Some((shard.payer_amounts, shard.receiver_notionals, amount));
@@ -330,8 +317,6 @@ mod tests {
         }
     }
 
-    /// Test-local equivalent of the former `collect_input` wrapper: folds the same pure
-    /// `fund_one`/`merge_shards` production units over the active users, single-threaded.
     fn shard(
         ups: &UserProfileService,
         symbol: i32,
@@ -344,8 +329,8 @@ mod tests {
             .users
             .values()
             .filter(|u| u.user_status == UserStatus::Active)
-            .filter_map(|u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k));
-        merge_shards(parts)
+            .filter_map(|u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k));
+        merge_funding_contributions(parts)
     }
 
     #[test]

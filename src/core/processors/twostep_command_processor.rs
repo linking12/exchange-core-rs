@@ -27,9 +27,6 @@ pub trait TwoStepCommandProcessor {
 
     fn apply(&self, ctx: &mut TwoStepContext, cmd: &mut OrderCommand);
 
-    /// 对满足 select 的用户并行执行 per-user 纯函数 map_user(逐用户工作单元),
-    /// 按 uid 序返回每用户结果,交由调用方单线程 reduce。
-    /// map_user 只拿 &UserProfile —— 结构上无法改共享状态(并行只读由类型强制)。
     fn map_users<T: Send>(
         &self,
         ctx: &TwoStepContext,

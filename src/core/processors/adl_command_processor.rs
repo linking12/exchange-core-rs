@@ -32,14 +32,8 @@ impl TwoStepCommandProcessor for AdlCommandProcessor {
             return CommandResultCode::Success;
         }
 
-        // Parallel per-user profitability scan (Task 4.1): each user is a pure, read-only
-        // `profit_one` call under `map_users`, which returns per-user results in uid order.
-        // Pushing candidates in that returned order, per user, into the per-symbol buckets below
-        // reproduces exactly the order the old serial `compute_profitable_positions_by_symbol`
-        // scan produced (users in uid order, positions within a user in their existing order),
-        // regardless of worker count.
         let per_user: Vec<Vec<(i32, SymbolPositionRecord)>> =
-            self.map_users(ctx, |_| true, |u| LiquidationService::profit_one(u, ctx.ssp, &ctx.risk.last_price_cache));
+            self.map_users(ctx, |_| true, |u| LiquidationService::user_profitable_positions(u, ctx.ssp, &ctx.risk.last_price_cache));
 
         let mut candidates_map: BTreeMap<i32, Vec<SymbolPositionRecord>> = BTreeMap::new();
         for user_candidates in per_user {
@@ -116,15 +110,6 @@ impl AdlCommandProcessor {
             })
             .collect();
 
-        // Deterministic total order (Task 4.1): rank by score descending, and break ties by uid
-        // descending. Ties-by-uid-descending reproduces the pre-refactor "stable ascending sort
-        // then reverse" tie behavior (see `collect_input_tie_break_reverses_input_order_like_java_
-        // reverse_this` below: with candidates entering in ascending-uid order -- guaranteed both
-        // by the old serial per-uid scan and by the new `map_users`-based merge in `collect()` --
-        // reversing a same-score run reversed it to descending uid too). Making the tie-break an
-        // explicit `(score, uid)` comparator (rather than relying on input order) means the result
-        // no longer depends on the candidate list's incoming order at all, so worker count can
-        // never change which candidates get picked.
         let mut scored: Vec<(i64, SymbolPositionRecord)> =
             filtered.into_iter().map(|pos| (LiquidationService::risk_score(&pos, bankruptcy_price), pos)).collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.uid.cmp(&a.1.uid)));

@@ -23,10 +23,8 @@ use crate::core::utils::core_arithmetic_utils::{add_exact, ceil_mul_div, mul_exa
 
 const MS_PER_DAY: i64 = 86_400 * 1_000;
 
-/// Pure per-user scan result: `decide_loans`'s read-only output, consumed by
-/// `apply_loan_outcome`. See spec §4.3 (decide/apply co-located pair).
 #[derive(Debug, Default)]
-struct LoanScanOutcome {
+struct LoanLiquidationActions {
     commands: Vec<OrderCommand>,
     alerts: Vec<FundEvent>,
 }
@@ -90,27 +88,20 @@ impl LoanLiquidationEngine {
         } else {
             ups.users.values().filter(|up| covered_by_scan_slice(cmd, up.uid)).map(|up| up.uid).collect()
         };
-        // Parallel read-only decision phase (per-uid, order-preserving) — see spec §4.3.
-        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| Self::decide_loans(up, ssp, last_price_cache, loan_service, cmd.timestamp)));
-        // Serial apply phase, in uid-ascending order (uids is already ordered) — byte-identical to serial.
+        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| Self::decide_loan_liquidation(up, ssp, last_price_cache, loan_service, cmd.timestamp)));
         for outcome in outcomes.into_iter().flatten() {
-            self.apply_loan_outcome(outcome, fund_events);
+            self.apply_loan_liquidation(outcome, fund_events);
         }
     }
 
-    /// Pure read-only decision phase for one user (was `check_user`'s body, with
-    /// `check_isolated`/`check_cross`'s decision segments split out below). Commands/alerts
-    /// accumulate into the LOCAL outcome, never into `self` or a shared `fund_events` — this is
-    /// what makes it safe to run under `ComputePool::map` (no shared mutable output, see
-    /// spec §3/§4.3).
-    fn decide_loans(
+    fn decide_loan_liquidation(
         up: &UserProfile,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
         ts: i64,
-    ) -> LoanScanOutcome {
-        let mut outcome = LoanScanOutcome::default();
+    ) -> LoanLiquidationActions {
+        let mut outcome = LoanLiquidationActions::default();
         for loan in up.isolated_loans.values() {
             Self::decide_isolated(loan, ts, ssp, last_price_cache, loan_service, &mut outcome);
         }
@@ -118,11 +109,7 @@ impl LoanLiquidationEngine {
         outcome
     }
 
-    /// Serial write phase for one user (was `check_isolated`/`check_cross`'s submission
-    /// segment): flush this user's alert events first, then submit each queued command in
-    /// decide order — byte-identical to the old serial submission order, whatever thread
-    /// `decide_loans` actually ran on.
-    fn apply_loan_outcome(&mut self, outcome: LoanScanOutcome, fund_events: &mut Vec<FundEvent>) {
+    fn apply_loan_liquidation(&mut self, outcome: LoanLiquidationActions, fund_events: &mut Vec<FundEvent>) {
         fund_events.extend(outcome.alerts);
         for cmd in outcome.commands {
             self.command_submitter.submit(cmd);
@@ -135,7 +122,7 @@ impl LoanLiquidationEngine {
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
-        outcome: &mut LoanScanOutcome,
+        outcome: &mut LoanLiquidationActions,
     ) {
         if loan.is_empty() {
             return;
@@ -213,7 +200,7 @@ impl LoanLiquidationEngine {
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
-        outcome: &mut LoanScanOutcome,
+        outcome: &mut LoanLiquidationActions,
     ) {
         if up.cross_loans.is_empty() {
             return;

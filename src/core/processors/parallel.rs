@@ -1,11 +1,6 @@
-//! 引擎自持的非复制态并行执行器:对全体用户/持仓做只读 per-item map。
-//! 详见 docs/superpowers/specs/2026-09-22-parallel-batch-compute-design.md。
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComputeConfig {
-    /// 线程池大小;<=1 即纯串行,不起任何线程。
     pub workers: usize,
-    /// N < 此值直接串行,省 fork-join 开销。
     pub serial_threshold: usize,
 }
 
@@ -15,9 +10,7 @@ impl Default for ComputeConfig {
     }
 }
 
-/// 非复制态:不进快照,new()/recover() 后按本节点配置存在。
 pub struct ComputePool {
-    // workers<=1 时为 None:默认串行不分配任何线程。
     pool: Option<rayon::ThreadPool>,
     config: ComputeConfig,
 }
@@ -54,9 +47,6 @@ impl ComputePool {
         &self.config
     }
 
-    /// 对每个 item 并行执行纯函数 map_one,按输入顺序返回结果。
-    /// map_one 只拿 &X(结构上无 &mut);结果保序(rayon collect 保序);
-    /// workers<=1 或 len<serial_threshold 时在调用线程串行。
     pub fn map<X, T>(&self, items: &[X], map_one: impl Fn(&X) -> T + Sync) -> Vec<T>
     where
         X: Sync,
@@ -65,7 +55,6 @@ impl ComputePool {
         match &self.pool {
             Some(pool) if items.len() >= self.config.serial_threshold => {
                 use rayon::prelude::*;
-                // install:在本引擎自持的池里跑,借用 items/map_one 安全(阻塞至完成)。
                 pool.install(|| items.par_iter().map(&map_one).collect())
             }
             _ => items.iter().map(&map_one).collect(),
@@ -98,14 +87,11 @@ mod tests {
 
     #[test]
     fn serial_threshold_forces_serial_below_n() {
-        // threshold 高于 len -> 走串行分支,但结果必须与并行一致
         let input: Vec<i64> = (0..500).collect();
         assert_eq!(square(&input, 8, 100_000), square(&input, 8, 0));
     }
 }
 
-// 硬前提:并行 map 借用的热数据必须 Sync(无内部可变)。
-// 谁往这些类型塞 Rc/RefCell/Cell,此处构建立即失败。
 const _: () = {
     fn assert_sync<T: Sync>() {}
     let _ = assert_sync::<crate::core::common::user_profile::UserProfile>;
