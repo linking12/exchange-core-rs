@@ -186,27 +186,6 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
 
 impl FundingFeeCommandProcessor {
 
-    /// Serial wrapper kept for the existing per-shard unit tests below: delegates to the same
-    /// pure `fund_one`/`merge_shards` the parallel `collect()` path uses, folded single-threaded
-    /// over all active users. Behavior (returned shard) is byte-identical to before this file's
-    /// per-user extraction, regardless of worker count.
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn collect_input(
-        ups: &UserProfileService,
-        symbol: i32,
-        mark_price: i64,
-        action: OrderAction,
-        rate: i64,
-        rate_scale_k: i64,
-    ) -> FundingPaymentAndRecvNotional {
-        let parts = ups
-            .users
-            .values()
-            .filter(|u| u.user_status == UserStatus::Active)
-            .filter_map(|u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k));
-        merge_shards(parts)
-    }
-
     fn build_matcher_events(shards_data: &[FundingPaymentAndRecvNotional]) -> Vec<(usize, i64)> {
         let total_pay = sum_i64_checked(shards_data.iter().flat_map(|s| s.payer_amounts.values()));
         let total_recv_notional = sum_i64_checked(shards_data.iter().flat_map(|s| s.receiver_notionals.values()));
@@ -351,11 +330,29 @@ mod tests {
         }
     }
 
+    /// Test-local equivalent of the former `collect_input` wrapper: folds the same pure
+    /// `fund_one`/`merge_shards` production units over the active users, single-threaded.
+    fn shard(
+        ups: &UserProfileService,
+        symbol: i32,
+        mark_price: i64,
+        action: OrderAction,
+        rate: i64,
+        rate_scale_k: i64,
+    ) -> FundingPaymentAndRecvNotional {
+        let parts = ups
+            .users
+            .values()
+            .filter(|u| u.user_status == UserStatus::Active)
+            .filter_map(|u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k));
+        merge_shards(parts)
+    }
+
     #[test]
     fn collect_input_payer_side_computes_exact_fee_and_skips_zero_fee() {
         let mut ups = ups_with_user(1);
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.payer_amounts.get(&1), Some(&5));
         assert!(shard.receiver_notionals.is_empty());
     }
@@ -364,7 +361,7 @@ mod tests {
     fn collect_input_payer_side_skips_when_computed_fee_not_positive() {
         let mut ups = ups_with_user(1);
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 0, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 0, 1000);
         assert!(shard.payer_amounts.is_empty());
     }
 
@@ -372,7 +369,7 @@ mod tests {
     fn collect_input_receiver_side_records_raw_notional_not_fee() {
         let mut ups = ups_with_user(2);
         ups.get_mut(2).unwrap().positions.insert(SYMBOL, position(2, PositionDirection::Short, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.receiver_notionals.get(&2), Some(&1000));
         assert!(shard.payer_amounts.is_empty());
     }
@@ -386,7 +383,7 @@ mod tests {
         ups.get_mut(3).unwrap().positions.insert(SYMBOL, position(3, PositionDirection::Long, 100));
         ups.get_mut(3).unwrap().user_status = crate::core::common::user_status::UserStatus::Suspended;
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert!(shard.payer_amounts.is_empty());
         assert!(shard.receiver_notionals.is_empty());
     }
@@ -398,7 +395,7 @@ mod tests {
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
         ups.get_mut(1).unwrap().positions.insert(-SYMBOL, position(1, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.payer_amounts.get(&1), Some(&5), "the long leg must go into the payer pool");
         assert_eq!(shard.receiver_notionals.get(&1), Some(&1000), "HEDGE short leg (-symbol) must be settled into the receiver pool");
     }
@@ -409,7 +406,7 @@ mod tests {
         ups.get_mut(2).unwrap().position_mode = PositionMode::Hedge;
         ups.get_mut(2).unwrap().positions.insert(-SYMBOL, position(2, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.receiver_notionals.get(&2), Some(&1000), "a lone short leg must also be settled");
         assert!(shard.payer_amounts.is_empty());
     }
@@ -419,7 +416,7 @@ mod tests {
         let mut ups = ups_with_user(3);
         ups.get_mut(3).unwrap().positions.insert(-SYMBOL, position(3, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert!(shard.receiver_notionals.is_empty(), "ONEWAY must not read -symbol");
         assert!(shard.payer_amounts.is_empty());
     }
