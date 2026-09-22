@@ -91,10 +91,10 @@ impl LoanLiquidationEngine {
             ups.users.values().filter(|up| covered_by_scan_slice(cmd, up.uid)).map(|up| up.uid).collect()
         };
         // Parallel read-only decision phase (per-uid, order-preserving) — see spec §4.3.
-        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| (uid, Self::decide_loans(up, ssp, last_price_cache, loan_service, cmd.timestamp))));
+        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| Self::decide_loans(up, ssp, last_price_cache, loan_service, cmd.timestamp)));
         // Serial apply phase, in uid-ascending order (uids is already ordered) — byte-identical to serial.
-        for (uid, outcome) in outcomes.into_iter().flatten() {
-            self.apply_loan_outcome(uid, outcome, fund_events);
+        for outcome in outcomes.into_iter().flatten() {
+            self.apply_loan_outcome(outcome, fund_events);
         }
     }
 
@@ -122,7 +122,7 @@ impl LoanLiquidationEngine {
     /// segment): flush this user's alert events first, then submit each queued command in
     /// decide order — byte-identical to the old serial submission order, whatever thread
     /// `decide_loans` actually ran on.
-    fn apply_loan_outcome(&mut self, _uid: i64, outcome: LoanScanOutcome, fund_events: &mut Vec<FundEvent>) {
+    fn apply_loan_outcome(&mut self, outcome: LoanScanOutcome, fund_events: &mut Vec<FundEvent>) {
         fund_events.extend(outcome.alerts);
         for cmd in outcome.commands {
             self.command_submitter.submit(cmd);
