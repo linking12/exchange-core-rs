@@ -34,6 +34,7 @@ use crate::core::processors::risk_engine_command_dispatcher::RiskEngineCommandDi
 use crate::core::processors::loan::loan_service::LoanService;
 use crate::core::utils::core_arithmetic_utils as arithmetic;
 use crate::core::utils::core_arithmetic_utils::{mul_exact, sub_exact};
+use crate::core::processors::parallel::ComputePool;
 
 #[derive(Debug, Default)]
 pub struct RiskEngine {
@@ -46,6 +47,8 @@ pub struct RiskEngine {
     pub liquidation_service: LiquidationService,
     pub liquidation_engine: LiquidationEngine,
     pub(crate) binary_cmd: BinaryCommandsProcessor,
+    // 非复制态:不进快照。new()/recover() 后按本节点配置存在。
+    compute_pool: ComputePool,
 }
 
 impl RiskEngine {
@@ -61,6 +64,7 @@ impl RiskEngine {
             liquidation_service: LiquidationService::new(),
             liquidation_engine: LiquidationEngine::new(),
             binary_cmd: BinaryCommandsProcessor::new(),
+            compute_pool: ComputePool::default(),
         }
     }
 
@@ -71,6 +75,14 @@ impl RiskEngine {
         self.last_price_cache.clear();
         self.loan_service = LoanService::new();
         self.liquidation_service = LiquidationService::new();
+    }
+
+    pub fn compute_pool(&self) -> &ComputePool {
+        &self.compute_pool
+    }
+
+    pub fn set_compute_config(&mut self, cfg: crate::core::processors::parallel::ComputeConfig) {
+        self.compute_pool = ComputePool::new(cfg);
     }
 
     pub fn pre_process_command(
@@ -6115,6 +6127,17 @@ mod tests {
             assert_eq!(cmd.result_code, Some(CommandResultCode::Success), "空候选是 matcher-event 级别的全拒，不是命令失败（同 IF_TAKEOVER 先例）");
             assert!(cmd.adl_events.is_empty());
             assert!(ups.get(TAKER_UID).unwrap().positions.contains_key(&FUT_SYMBOL), "全拒（events 为空）时 finalize 不应关闭 taker 自己的仓");
+        }
+
+        #[test]
+        fn risk_engine_default_compute_pool_is_serial() {
+            use crate::core::processors::parallel::ComputeConfig;
+            let re = RiskEngine::new();
+            assert_eq!(re.compute_pool().config().workers, 1, "默认串行");
+
+            let mut re2 = RiskEngine::new();
+            re2.set_compute_config(ComputeConfig { workers: 4, serial_threshold: 0 });
+            assert_eq!(re2.compute_pool().config().workers, 4);
         }
     }
 }
