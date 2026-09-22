@@ -103,3 +103,14 @@ mod tests {
         assert_eq!(square(&input, 8, 100_000), square(&input, 8, 0));
     }
 }
+
+// 硬前提:并行 map 借用的热数据必须 Sync(无内部可变)。
+// 谁往这些类型塞 Rc/RefCell/Cell,此处构建立即失败。
+const _: () = {
+    fn assert_sync<T: Sync>() {}
+    let _ = assert_sync::<crate::core::common::user_profile::UserProfile>;
+    let _ = assert_sync::<crate::core::common::symbol_position_record::SymbolPositionRecord>;
+    let _ = assert_sync::<crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider>;
+    let _ = assert_sync::<crate::core::processors::loan::loan_service::LoanService>;
+    let _ = assert_sync::<crate::core::common::last_price_cache_record::LastPriceCacheRecord>;
+};
