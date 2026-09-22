@@ -348,3 +348,170 @@ fn adl_is_worker_invariant() {
     assert_eq!(untouched.open_volume, 1, "not selected -> position must be untouched");
     assert_eq!(untouched.pending_adl_size, 0, "not selected -> pending_adl_size must remain 0");
 }
+
+/// Task 5.1: LOAN liquidation `check_loans` decision phase parallelized via `ComputePool::map`
+/// (`LoanLiquidationEngine::decide_loans` / `apply_loan_outcome`) -- the highest-risk of the four
+/// scans, since the old serial code interleaved decision with command submission inside
+/// `check_isolated`/`check_cross`.
+///
+/// Builds one isolated-loan spot symbol (ETH/XBT), a lending pool funded in XBT, and 1200
+/// isolated-loan borrowers (past the default `serial_threshold`=1024, so `workers=8` actually
+/// forks) split into 3 equal risk profiles by `uid % 3`, all opened at the same collateral/price
+/// so LTV is driven purely by principal:
+/// - group 0 ("breach"): principal so post-crash LTV ~= 100%, well over the 80% liquidation
+///   threshold -> queues a `LoanForceLiquidate` command.
+/// - group 1 ("margin call"): principal so post-crash LTV ~= 72%, between the 70% margin-call
+///   and 80% liquidation thresholds -> queues a `LoanMarginCall` alert only, no command.
+/// - group 2 ("healthy"): principal so post-crash LTV ~= 40%, under every threshold -> nothing.
+///
+/// A single LP resting GTC bid absorbs every `LoanForceLiquidate` IOC sell. A targeted
+/// `MarkpriceAdjustment` (via `set_mark_price`) on the loan symbol then triggers `check_loans`'
+/// targeted branch (union of `isolated_loan_symbol_to_users`) over all 1200 holders, exercising
+/// both the parallel decide phase (LTV/threshold math, building the force-liquidate command) and
+/// the serial uid-ascending apply phase (alert-then-submit, byte-identical order to the old
+/// interleaved code). Asserts the resulting `state_hash` -- and thus every submitted
+/// `LoanForceLiquidate` command plus every `LoanMarginCall` alert, in uid-ascending order -- is
+/// identical whether the scan ran serially (workers=1) or in parallel (workers=8).
+#[test]
+fn loan_scan_is_worker_invariant() {
+    use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
+    use exchange_core_rs::core::common::cmd::order_command_type::OrderCommandType;
+    use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecification;
+    use exchange_core_rs::core::common::fund_event::FundEventType;
+    use exchange_core_rs::core::common::order_action::OrderAction;
+    use exchange_core_rs::core::common::order_type::OrderType;
+    use exchange_core_rs::core::common::symbol_type::SymbolType;
+    use exchange_core_rs::core::exchange_api::PlaceOrderRequest;
+
+    const ETH: i32 = 1;
+    const XBT: i32 = 2;
+    const SYMBOL: i32 = 903;
+    const LP: i64 = 1;
+    const BORROWER_FIRST: i64 = 10_002; // multiple of 3, so uid % 3 == (uid - BORROWER_FIRST) % 3 for every borrower
+    const NUM_BORROWERS: i64 = 1200; // > serial_threshold(1024): the workers=8 config actually forks
+    const OPEN_MARK: i64 = 1_000;
+    const CRASH_MARK: i64 = 500; // 50% crash -> post-crash LTV ~= 2x pre-crash LTV
+    const ETH_COLLATERAL: i64 = 100;
+    const LOAN_TS: i64 = 1_000;
+    // principal chosen so pre-crash LTV = principal / (ETH_COLLATERAL * OPEN_MARK):
+    const PRINCIPAL_BREACH: i64 = 50_000; // pre=50% -> post~=100% (>= 80% liquidation_ltv_bps)
+    const PRINCIPAL_MARGIN_CALL: i64 = 36_000; // pre=36% -> post~=72% (in [70%, 80%) -> alert only)
+    const PRINCIPAL_HEALTHY: i64 = 20_000; // pre=20% -> post~=40% (< 70% margin_call_ltv_bps)
+    const LP_ABSORB_SIZE: i64 = 60_000; // >> total breach-group sell volume (400 * 100 = 40,000)
+
+    fn loan_spec() -> CoreSymbolSpecification {
+        let mut spec = CoreSymbolSpecification {
+            symbol_id: SYMBOL,
+            symbol_type: SymbolType::CurrencyExchangePair,
+            base_currency: ETH,
+            quote_currency: XBT,
+            base_scale_k: 1,
+            quote_scale_k: 1,
+            ..Default::default()
+        };
+        spec.loan_config.update(6_000, 8_000, 7_000, i64::MAX, 365);
+        spec
+    }
+
+    fn principal_for(uid: i64) -> i64 {
+        match uid % 3 {
+            0 => PRINCIPAL_BREACH,
+            1 => PRINCIPAL_MARGIN_CALL,
+            _ => PRINCIPAL_HEALTHY,
+        }
+    }
+
+    fn build(api: &mut ExchangeApi) {
+        api.add_currency(ETH, 1);
+        api.add_currency(XBT, 1);
+        api.add_symbol(loan_spec());
+        api.set_mark_price(SYMBOL, OPEN_MARK);
+
+        api.submit(OrderCommand { command: OrderCommandType::PoolDeposit, order_id: 1, symbol: XBT, size: 100_000_000, ..Default::default() });
+
+        api.add_user(LP);
+        api.balance_adjustment(LP, XBT, LP_ABSORB_SIZE * CRASH_MARK * 4, LP);
+
+        let mut order_id: i64 = 2;
+        for i in 0..NUM_BORROWERS {
+            let uid = BORROWER_FIRST + i;
+            api.add_user(uid);
+            api.balance_adjustment(uid, ETH, ETH_COLLATERAL, uid);
+            api.submit(OrderCommand {
+                command: OrderCommandType::LoanCreate,
+                order_id,
+                uid,
+                symbol: SYMBOL,
+                size: ETH_COLLATERAL,
+                price: principal_for(uid),
+                reserve_bid_price: uid, // loan_id = uid: unique per single-loan borrower
+                timestamp: LOAN_TS,
+                ..Default::default()
+            });
+            order_id += 1;
+        }
+
+        api.place_order(PlaceOrderRequest {
+            order_id,
+            uid: LP,
+            symbol: SYMBOL,
+            price: CRASH_MARK,
+            size: LP_ABSORB_SIZE,
+            reserve_bid_price: CRASH_MARK,
+            action: OrderAction::Bid,
+            order_type: OrderType::Gtc,
+        });
+
+        api.enable_liquidation();
+    }
+
+    fn run(api: &mut ExchangeApi) {
+        api.set_mark_price(SYMBOL, CRASH_MARK);
+    }
+
+    assert_workers_equivalent(build, run);
+
+    // Non-vacuous: separately re-run once and check every profile landed on its expected branch.
+    let mut check = ExchangeApi::new();
+    build(&mut check);
+    run(&mut check);
+
+    let breach_uid = BORROWER_FIRST; // uid % 3 == 0
+    let margin_call_uid = BORROWER_FIRST + 1; // uid % 3 == 1
+    let healthy_uid = BORROWER_FIRST + 2; // uid % 3 == 2
+
+    let breach_collateral = check
+        .ups()
+        .get(breach_uid)
+        .and_then(|up| up.isolated_loans.get(&breach_uid))
+        .map(|l| l.collateral_amount)
+        .unwrap_or(0);
+    assert!(
+        breach_collateral < ETH_COLLATERAL,
+        "breach-group borrower's isolated loan must have been force-liquidated (collateral consumed by the IOC sell), got {breach_collateral}"
+    );
+
+    let healthy_collateral = check
+        .ups()
+        .get(healthy_uid)
+        .and_then(|up| up.isolated_loans.get(&healthy_uid))
+        .map(|l| l.collateral_amount)
+        .unwrap_or(0);
+    assert_eq!(healthy_collateral, ETH_COLLATERAL, "healthy-group borrower must be untouched by the scan");
+
+    let margin_call_alert_fired = check
+        .last_fund_events()
+        .iter()
+        .any(|e| e.uid == margin_call_uid && e.event_type == FundEventType::LoanMarginCall);
+    assert!(margin_call_alert_fired, "margin-call-group borrower must have emitted a LoanMarginCall alert, not a liquidation");
+
+    let margin_call_collateral = check
+        .ups()
+        .get(margin_call_uid)
+        .and_then(|up| up.isolated_loans.get(&margin_call_uid))
+        .map(|l| l.collateral_amount)
+        .unwrap_or(0);
+    assert_eq!(margin_call_collateral, ETH_COLLATERAL, "margin-call-group borrower must not be liquidated (alert only)");
+
+    assert!(check.total_balance().is_global_zero(), "global balance must be conserved after the parallel loan scan");
+}

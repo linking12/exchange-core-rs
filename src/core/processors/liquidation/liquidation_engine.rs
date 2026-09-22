@@ -122,7 +122,7 @@ impl LiquidationEngine {
                 }
             }
         }
-        self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events);
+        self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events, pool);
     }
 
     /// Pure read-only decision phase for one user (was `check_user`'s A-segment).
