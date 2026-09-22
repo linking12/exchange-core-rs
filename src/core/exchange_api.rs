@@ -158,6 +158,10 @@ impl ExchangeApi {
         &mut self.core
     }
 
+    pub fn with_compute_pool(&mut self, cfg: crate::core::processors::parallel::ComputeConfig) {
+        self.core().with_compute_pool(cfg);
+    }
+
     fn run(&mut self, mut cmd: OrderCommand) -> CommandResultCode {
         self.core.process_command(&mut cmd);
         let rc = cmd.result_code.expect("process_command always sets result_code");
@@ -989,5 +993,13 @@ mod tests {
         assert!(api.total_balance().is_global_zero(), "globally conserved after seeding (accounts +1500 / adjustments bucket -1500)");
         api.add_accounts([(10i64, vec![(QUOTE, 9999i64)])]);
         assert_eq!(api.ups().get(10).unwrap().accounts.get(&QUOTE).copied().unwrap_or(0), 1000, "existing uid skipped, not overwritten");
+    }
+
+    #[test]
+    fn api_with_compute_pool_sets_workers() {
+        use crate::core::processors::parallel::ComputeConfig;
+        let mut api = ExchangeApi::new();
+        api.with_compute_pool(ComputeConfig { workers: 6, serial_threshold: 0 });
+        assert_eq!(api.core().risk.compute_pool().config().workers, 6);
     }
 }
