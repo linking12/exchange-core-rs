@@ -10,6 +10,7 @@ use crate::core::common::position_direction::PositionDirection;
 use crate::core::common::position_mode::PositionMode;
 use crate::core::common::symbol_position_record::SymbolPositionRecord;
 use crate::core::common::symbol_type::SymbolType;
+use crate::core::common::user_profile::UserProfile;
 use crate::core::common::user_status::UserStatus;
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::twostep_command_processor::{TwoStepCommandProcessor, TwoStepContext};
@@ -26,6 +27,78 @@ fn sum_i64_checked<'a>(vals: impl Iterator<Item = &'a i64>) -> i64 {
 pub struct FundingPaymentAndRecvNotional {
     pub payer_amounts: BTreeMap<i64, i64>,
     pub receiver_notionals: BTreeMap<i64, i64>,
+}
+
+/// One user's contribution to a funding-fee settlement round. Pure, order-independent:
+/// safe to compute for any user on any thread (read-only borrow of `UserProfile`).
+///
+/// `payer_fee`/`receiver_notional` are `Some` exactly when the original serial scan would
+/// have inserted into `payer_amounts`/`receiver_notionals` respectively (so e.g. a HEDGE user
+/// with both a long and a short leg on the funding symbol can produce both -- they are not
+/// mutually exclusive at the *map-insertion* level, only per-leg).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FundingContribution {
+    uid: i64,
+    payer_fee: Option<i64>,
+    receiver_notional: Option<i64>,
+}
+
+/// Per-user pure funding computation extracted from the former `collect_input` loop body.
+/// Handles both the primary `symbol` leg and, for HEDGE-mode users, the `-symbol` leg.
+/// Returns `None` when the user has no funding contribution at all.
+fn fund_one(
+    user: &UserProfile,
+    symbol: i32,
+    mark_price: i64,
+    action: OrderAction,
+    rate: i64,
+    rate_scale_k: i64,
+) -> Option<FundingContribution> {
+    let mut payer_fee = None;
+    let mut receiver_notional = None;
+    let mut process = |position: &SymbolPositionRecord| {
+        if position.open_volume == 0 {
+            return;
+        }
+        let notional = mul_exact(position.open_volume, mark_price);
+        if position.direction.is_same_as_action(action) {
+            let fee = arithmetic::trunc_mul_div(notional, rate, rate_scale_k);
+            if fee > 0 {
+                payer_fee = Some(fee);
+            }
+        } else {
+            receiver_notional = Some(notional);
+        }
+    };
+    if let Some(position) = user.positions.get(&symbol) {
+        process(position);
+    }
+    if user.position_mode == PositionMode::Hedge {
+        if let Some(position) = user.positions.get(&-symbol) {
+            process(position);
+        }
+    }
+    if payer_fee.is_none() && receiver_notional.is_none() {
+        None
+    } else {
+        Some(FundingContribution { uid: user.uid, payer_fee, receiver_notional })
+    }
+}
+
+/// Folds per-user contributions into the two global `BTreeMap`s. Uids are disjoint across
+/// distinct `UserProfile`s, so insertion order does not affect the result -- safe to call
+/// with parts produced by a parallel (or serial) per-user scan in any order.
+fn merge_shards(parts: impl Iterator<Item = FundingContribution>) -> FundingPaymentAndRecvNotional {
+    let mut shard = FundingPaymentAndRecvNotional::default();
+    for c in parts {
+        if let Some(fee) = c.payer_fee {
+            shard.payer_amounts.insert(c.uid, fee);
+        }
+        if let Some(notional) = c.receiver_notional {
+            shard.receiver_notionals.insert(c.uid, notional);
+        }
+    }
+    shard
 }
 
 pub struct FundingFeeCommandProcessor;
@@ -46,7 +119,14 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
         }
         let action = cmd.action.expect("SETTLE_FUNDINGFEES requires action");
         let symbol = spec.symbol_id;
-        let shard = Self::collect_input(ctx.ups, symbol, mark_price, action, cmd.price, cmd.size);
+        let rate = cmd.price;
+        let rate_scale_k = cmd.size;
+        let parts = self.map_users(
+            ctx,
+            |u| u.user_status == UserStatus::Active,
+            |u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k),
+        );
+        let shard = merge_shards(parts.into_iter().flatten());
         let events = Self::build_matcher_events(std::slice::from_ref(&shard));
         if let Some(&(_shard_id, amount)) = events.first() {
             cmd.funding_fee_event = Some((shard.payer_amounts, shard.receiver_notionals, amount));
@@ -106,6 +186,11 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
 
 impl FundingFeeCommandProcessor {
 
+    /// Serial wrapper kept for the existing per-shard unit tests below: delegates to the same
+    /// pure `fund_one`/`merge_shards` the parallel `collect()` path uses, folded single-threaded
+    /// over all active users. Behavior (returned shard) is byte-identical to before this file's
+    /// per-user extraction, regardless of worker count.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn collect_input(
         ups: &UserProfileService,
         symbol: i32,
@@ -114,36 +199,12 @@ impl FundingFeeCommandProcessor {
         rate: i64,
         rate_scale_k: i64,
     ) -> FundingPaymentAndRecvNotional {
-        let mut shard = FundingPaymentAndRecvNotional::default();
-        for user in ups.users.values() {
-            if user.user_status != UserStatus::Active {
-                continue;
-            }
-            let uid = user.uid;
-            let mut process = |position: &SymbolPositionRecord| {
-                if position.open_volume == 0 {
-                    return;
-                }
-                let notional = mul_exact(position.open_volume, mark_price);
-                if position.direction.is_same_as_action(action) {
-                    let fee = arithmetic::trunc_mul_div(notional, rate, rate_scale_k);
-                    if fee > 0 {
-                        shard.payer_amounts.insert(uid, fee);
-                    }
-                } else {
-                    shard.receiver_notionals.insert(uid, notional);
-                }
-            };
-            if let Some(position) = user.positions.get(&symbol) {
-                process(position);
-            }
-            if user.position_mode == PositionMode::Hedge {
-                if let Some(position) = user.positions.get(&-symbol) {
-                    process(position);
-                }
-            }
-        }
-        shard
+        let parts = ups
+            .users
+            .values()
+            .filter(|u| u.user_status == UserStatus::Active)
+            .filter_map(|u| fund_one(u, symbol, mark_price, action, rate, rate_scale_k));
+        merge_shards(parts)
     }
 
     fn build_matcher_events(shards_data: &[FundingPaymentAndRecvNotional]) -> Vec<(usize, i64)> {
