@@ -231,3 +231,120 @@ fn futures_scan_is_worker_invariant() {
         },
     );
 }
+
+/// Task 4.1: ADL profitable-position scan parallelized via `TwoStepCommandProcessor::map_users`
+/// (`LiquidationService::profit_one`), with ranking (`AdlCommandProcessor::collect_input`) made a
+/// deterministic total order: `(risk_score desc, uid desc)`.
+///
+/// Builds a perpetual-futures symbol with one taker (LONG) and 1200 SHORT counterparties, all
+/// opened at the identical price/size/leverage against the taker's single resting bid, so every
+/// counterparty's `risk_score` ties exactly (same actual_leverage, same unrealized_pnl, same
+/// default ISOLATED `adl_eligibility`). A mark-price drop makes every short profitable, then an
+/// AUTO_DELEVERAGING command requests exactly half the total size -- so which half gets picked is
+/// driven entirely by the tie-break, not by score. Asserts the resulting `state_hash` is identical
+/// whether the scan ran serially (workers=1) or in parallel (workers=8).
+///
+/// `assert_workers_equivalent` only compares `state_hash`, so separately (outside it, on a plain
+/// `ExchangeApi`) this also asserts the run was non-vacuous and picked the expected half: the
+/// highest-uid tied candidate (ranked first under `(score, uid desc)`) had its 1-lot position fully
+/// closed, while the lowest-uid tied candidate (budget exhausted before reaching it) was left with
+/// its position and `pending_adl_size` untouched.
+#[test]
+fn adl_is_worker_invariant() {
+    use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecification;
+    use exchange_core_rs::core::common::margin_mode::MarginMode;
+    use exchange_core_rs::core::common::order_action::OrderAction;
+    use exchange_core_rs::core::common::order_type::OrderType;
+    use exchange_core_rs::core::common::symbol_type::SymbolType;
+    use exchange_core_rs::core::exchange_api::{AutoDeleveragingRequest, PlaceFuturesOrderRequest};
+
+    const BASE: i32 = 1;
+    const QUOTE: i32 = 2;
+    const FUT_SYMBOL: i32 = 902;
+    const TAKER: i64 = 1;
+    const CP_FIRST: i64 = 100;
+    const NUM_CP: i64 = 1200; // > serial_threshold(1024): the workers=8 config actually forks
+    const CP_LAST: i64 = CP_FIRST + NUM_CP - 1; // 1299
+    const ENTRY: i64 = 10_000;
+    const DROP: i64 = 9_000; // below ENTRY -> every SHORT counterparty is profitable
+    const LEVERAGE: i32 = 5;
+    const ADL_SIZE: i64 = NUM_CP / 2; // 600: a partial pick, driven entirely by the uid tie-break
+
+    fn build(api: &mut ExchangeApi) {
+        api.add_currency(BASE, 1);
+        api.add_currency(QUOTE, 1);
+        api.add_futures_symbol(CoreSymbolSpecification {
+            symbol_id: FUT_SYMBOL,
+            symbol_type: SymbolType::FuturesContractPerpetual,
+            base_currency: BASE,
+            quote_currency: QUOTE,
+            base_scale_k: 1,
+            quote_scale_k: 1,
+            ..Default::default()
+        });
+        api.set_mark_price(FUT_SYMBOL, ENTRY);
+
+        api.add_user(TAKER);
+        api.balance_adjustment(TAKER, QUOTE, 1_000_000_000, TAKER);
+        api.place_futures_order(PlaceFuturesOrderRequest {
+            order_id: 1,
+            uid: TAKER,
+            symbol: FUT_SYMBOL,
+            price: ENTRY,
+            size: NUM_CP,
+            action: OrderAction::Bid,
+            order_type: OrderType::Gtc,
+            leverage: LEVERAGE,
+            margin_mode: MarginMode::Isolated,
+            reduce_only: false,
+        });
+
+        let mut order_id: i64 = 2;
+        for uid in CP_FIRST..=CP_LAST {
+            api.add_user(uid);
+            api.balance_adjustment(uid, QUOTE, 1_000_000, uid);
+            api.place_futures_order(PlaceFuturesOrderRequest {
+                order_id,
+                uid,
+                symbol: FUT_SYMBOL,
+                price: ENTRY,
+                size: 1,
+                action: OrderAction::Ask,
+                order_type: OrderType::Gtc,
+                leverage: LEVERAGE,
+                margin_mode: MarginMode::Isolated,
+                reduce_only: false,
+            });
+            order_id += 1;
+        }
+
+        api.set_mark_price(FUT_SYMBOL, DROP);
+    }
+
+    fn run(api: &mut ExchangeApi) {
+        api.submit_auto_deleveraging(AutoDeleveragingRequest {
+            order_id: 999_999,
+            uid: TAKER,
+            symbol: FUT_SYMBOL,
+            action: OrderAction::Bid,
+            size: ADL_SIZE,
+            price: DROP,
+            timestamp: 1,
+        });
+    }
+
+    assert_workers_equivalent(build, run);
+
+    let mut check = ExchangeApi::new();
+    build(&mut check);
+    run(&mut check);
+    assert!(
+        check.user_position(CP_LAST, FUT_SYMBOL).is_none(),
+        "highest-uid tied candidate must be picked first under the (score, uid desc) tie-break and fully closed (size=1 == available)"
+    );
+    let untouched = check
+        .user_position(CP_FIRST, FUT_SYMBOL)
+        .expect("lowest-uid tied candidate must be left untouched: budget exhausted before reaching it");
+    assert_eq!(untouched.open_volume, 1, "not selected -> position must be untouched");
+    assert_eq!(untouched.pending_adl_size, 0, "not selected -> pending_adl_size must remain 0");
+}
