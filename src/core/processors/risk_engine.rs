@@ -48,7 +48,11 @@ pub struct RiskEngine {
     pub liquidation_engine: LiquidationEngine,
     pub(crate) binary_cmd: BinaryCommandsProcessor,
     // 非复制态:不进快照。new()/recover() 后按本节点配置存在。
-    compute_pool: ComputePool,
+    // pub(crate) (not private): sibling modules (e.g. risk_engine_command_dispatcher) need to
+    // borrow this as a disjoint field alongside `&mut engine.liquidation_engine` in the same
+    // call expression; going through the `compute_pool()` accessor would borrow all of `*engine`
+    // immutably and conflict with that `&mut` — see liquidation task-3.1 report.
+    pub(crate) compute_pool: ComputePool,
 }
 
 impl RiskEngine {
@@ -137,7 +141,7 @@ impl RiskEngine {
             cmd.result_code = Some(AdlCommandProcessor.collect(&mut ctx, cmd));
         } else if cmd.command == OrderCommandType::LiquidationScan {
             let mut _alerts = Vec::new();
-            self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &mut _alerts);
+            self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &self.compute_pool, &mut _alerts);
             cmd.fund_events.append(&mut _alerts);
             cmd.result_code = Some(CommandResultCode::Success);
         }
@@ -241,7 +245,7 @@ impl RiskEngine {
             }
             if had_funding_event {
                 let mut _alerts = Vec::new();
-                self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &mut _alerts);
+                self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &self.compute_pool, &mut _alerts);
                 cmd.fund_events.append(&mut _alerts);
             }
             return;
