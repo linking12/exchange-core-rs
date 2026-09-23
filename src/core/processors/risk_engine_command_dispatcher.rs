@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use crate::core::common::balance_adjustment_type::BalanceAdjustmentType;
 use crate::core::common::cmd::command_result_code::CommandResultCode;
 use crate::core::common::cmd::order_command::OrderCommand;
 use crate::core::common::cmd::order_command_type::OrderCommandType;
@@ -28,7 +29,13 @@ impl RiskEngineCommandDispatcher {
     ) -> CommandResultCode {
         let rc = match cmd.command {
             OrderCommandType::AddUser => Self::add_user(engine, cmd, ups),
-            OrderCommandType::BalanceAdjustment => Self::balance_adjustment(engine, cmd, ups, ssp),
+            OrderCommandType::BalanceAdjustment => {
+                let adj_type = cmd
+                    .order_type
+                    .map(|ot| BalanceAdjustmentType::of(ot.code()))
+                    .unwrap_or(BalanceAdjustmentType::Adjustment);
+                Self::balance_adjustment(engine, cmd, ups, ssp, adj_type)
+            }
             OrderCommandType::MarginAdjustment => Self::margin_adjustment(engine, cmd, ups, ssp),
             OrderCommandType::LeverageAdjustment => Self::leverage_adjustment(engine, cmd, ups, ssp),
             OrderCommandType::MarkpriceAdjustment => Self::markprice_adjustment(engine, cmd, ups, ssp),
@@ -69,6 +76,7 @@ impl RiskEngineCommandDispatcher {
         cmd: &OrderCommand,
         ups: &mut UserProfileService,
         ssp: &SymbolSpecificationProvider,
+        adj_type: BalanceAdjustmentType,
     ) -> CommandResultCode {
         let currency = cmd.symbol;
         let amount_diff = cmd.price;
@@ -95,13 +103,9 @@ impl RiskEngineCommandDispatcher {
 
         user_profile.add_to_account(currency, amount_diff);
 
-        let adj_type = cmd
-            .order_type
-            .map(|ot| crate::core::common::balance_adjustment_type::BalanceAdjustmentType::of(ot.code()))
-            .unwrap_or(crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
         let bucket = match adj_type {
-            crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Suspend => &mut engine.suspends,
-            crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment => &mut engine.adjustments,
+            BalanceAdjustmentType::Suspend => &mut engine.suspends,
+            BalanceAdjustmentType::Adjustment => &mut engine.adjustments,
         };
         *bucket.entry(currency).or_insert(0) -= amount_diff;
 
@@ -178,7 +182,7 @@ impl RiskEngineCommandDispatcher {
         }
 
         if cmd.margin_mode == MarginMode::Cross {
-            return Self::balance_adjustment(engine, cmd, ups, ssp);
+            return Self::balance_adjustment(engine, cmd, ups, ssp, BalanceAdjustmentType::Adjustment);
         }
 
         let user_profile = match ups.get_mut(cmd.uid) {

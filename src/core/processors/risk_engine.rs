@@ -803,9 +803,7 @@ impl RiskEngine {
         for (&key, pos_record) in user_profile.positions.iter() {
             if key == position_key {
                 if pos_record.margin_mode == MarginMode::Cross {
-                    let mark = self.mark_price(pos_record.symbol).unwrap_or_else(|| {
-                        panic!("mark price missing for open position symbol {}", pos_record.symbol)
-                    });
+                    let mark = self.mark_price(pos_record.symbol).unwrap_or(0);
                     cross_free_margin += arithmetic::size_price_to_currency_scale(
                         pos_record.estimate_pnl(mark),
                         spec.base_scale_k,
@@ -818,9 +816,7 @@ impl RiskEngine {
                     .get_symbol(pos_record.symbol)
                     .unwrap_or_else(|| panic!("symbol spec missing for symbol {}", pos_record.symbol));
                 if pos_record.margin_mode == MarginMode::Cross {
-                    let mark = self.mark_price(pos_record.symbol).unwrap_or_else(|| {
-                        panic!("mark price missing for open position symbol {}", pos_record.symbol)
-                    });
+                    let mark = self.mark_price(pos_record.symbol).unwrap_or(0);
                     cross_free_margin += arithmetic::size_price_to_currency_scale(
                         pos_record.estimate_pnl(mark),
                         other_spec.base_scale_k,
@@ -928,9 +924,7 @@ impl RiskEngine {
             let spec = ssp
                 .get_symbol(position.symbol)
                 .unwrap_or_else(|| panic!("symbol spec missing for symbol {}", position.symbol));
-            let mark = self
-                .mark_price(position.symbol)
-                .unwrap_or_else(|| panic!("mark price missing for open position symbol {}", position.symbol));
+            let mark = self.mark_price(position.symbol).unwrap_or(0);
 
             realized_pnl += arithmetic::size_price_to_currency_scale(
                 position.profit,
@@ -3082,7 +3076,7 @@ mod tests {
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
 
         let cmd = balance_adjustment_cmd(UID, QUOTE, 1000, 1);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
 
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 1000);
         assert_eq!(*engine.adjustments.get(&QUOTE).unwrap(), -1000);
@@ -3095,14 +3089,14 @@ mod tests {
         let mut engine = RiskEngine::new();
         let ssp = SymbolSpecificationProvider::new();
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
-        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 1), &mut ups, &ssp);
+        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 1), &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
         ups.get_mut(UID).unwrap().add_to_locked(QUOTE, 500);
 
         let before_account = ups.get(UID).unwrap().account(QUOTE);
         let before_adjustments = *engine.adjustments.get(&QUOTE).unwrap_or(&0);
 
         let withdraw_cmd = balance_adjustment_cmd(UID, QUOTE, -600, 2);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp), CommandResultCode::RiskNsf);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::RiskNsf);
 
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), before_account);
         assert_eq!(*engine.adjustments.get(&QUOTE).unwrap_or(&0), before_adjustments);
@@ -3114,10 +3108,10 @@ mod tests {
         let mut engine = RiskEngine::new();
         let ssp = SymbolSpecificationProvider::new();
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
-        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 1), &mut ups, &ssp);
+        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 1), &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
 
         let withdraw_cmd = balance_adjustment_cmd(UID, QUOTE, -400, 2);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 600);
         assert_eq!(*engine.adjustments.get(&QUOTE).unwrap(), -600);
     }
@@ -3130,19 +3124,19 @@ mod tests {
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
 
         let cmd = balance_adjustment_cmd(UID, QUOTE, 1000, 42);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 1000);
 
         let repeat = balance_adjustment_cmd(UID, QUOTE, 1000, 42);
         assert_eq!(
-            RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &repeat, &mut ups, &ssp),
+            RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &repeat, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment),
             CommandResultCode::UserMgmtAccountBalanceAdjustmentAlreadyAppliedSame
         );
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 1000);
         assert_eq!(*engine.adjustments.get(&QUOTE).unwrap(), -1000);
 
         let different_id = balance_adjustment_cmd(UID, QUOTE, 500, 43);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &different_id, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &different_id, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 1500);
         assert_eq!(*engine.adjustments.get(&QUOTE).unwrap(), -1500);
     }
@@ -3153,14 +3147,14 @@ mod tests {
         let mut engine = RiskEngine::new();
         let ssp = SymbolSpecificationProvider::new();
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
-        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 500, 1), &mut ups, &ssp);
+        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 500, 1), &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
 
         let nsf_attempt = balance_adjustment_cmd(UID, QUOTE, -600, 99);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &nsf_attempt, &mut ups, &ssp), CommandResultCode::RiskNsf);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &nsf_attempt, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::RiskNsf);
 
-        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 2), &mut ups, &ssp);
+        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 1000, 2), &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
         let retry = balance_adjustment_cmd(UID, QUOTE, -600, 99);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &retry, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &retry, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 900);
     }
 
@@ -3170,7 +3164,7 @@ mod tests {
         let mut engine = RiskEngine::new();
         let ssp = SymbolSpecificationProvider::new();
         let cmd = balance_adjustment_cmd(999, QUOTE, 100, 1);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp), CommandResultCode::AuthInvalidUser);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::AuthInvalidUser);
     }
 
     const FUT_SYMBOL: i32 = 200;
@@ -4655,10 +4649,10 @@ mod tests {
         let mut engine = RiskEngine::new();
         let ssp = SymbolSpecificationProvider::new();
         RiskEngineCommandDispatcher::add_user(&mut engine, &add_user_cmd(UID), &mut ups);
-        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 100, 1), &mut ups, &ssp);
+        RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &balance_adjustment_cmd(UID, QUOTE, 100, 1), &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment);
 
         let withdraw = balance_adjustment_cmd(UID, QUOTE, -400, 2);
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw, &mut ups, &ssp), CommandResultCode::RiskNsf);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::RiskNsf);
         assert_eq!(ups.get(UID).unwrap().account(QUOTE), 100);
     }
 
@@ -4681,7 +4675,7 @@ mod tests {
             order_id: 2,
             ..Default::default()
         };
-        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp), CommandResultCode::Success);
+        assert_eq!(RiskEngineCommandDispatcher::balance_adjustment(&mut engine, &withdraw_cmd, &mut ups, &ssp, crate::core::common::balance_adjustment_type::BalanceAdjustmentType::Adjustment), CommandResultCode::Success);
         assert_eq!(ups.get(UID).unwrap().account(FUT_QUOTE), 500 - 400);
     }
 
