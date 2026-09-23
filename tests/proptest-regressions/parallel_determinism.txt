@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9e9835480ca6a232db58080c8b723ba760009b05a710f683870d8974e64f8399 # shrinks to cmds = [PlaceFutures { uid_idx: 0, is_bid: false, price: 8517, size: 13, leverage: 1 }, PlaceFutures { uid_idx: 4, is_bid: true, price: 8517, size: 18, leverage: 14 }, PlaceFutures { uid_idx: 1, is_bid: false, price: 5000, size: 5, leverage: 1 }, PlaceFutures { uid_idx: 0, is_bid: false, price: 5000, size: 1, leverage: 1 }, PlaceFutures { uid_idx: 4, is_bid: false, price: 5000, size: 1, leverage: 14 }, MarkPrice { price: 5000 }, PlaceFutures { uid_idx: 1, is_bid: true, price: 5000, size: 2, leverage: 1 }]
