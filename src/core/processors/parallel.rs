@@ -90,6 +90,42 @@ mod tests {
         let input: Vec<i64> = (0..500).collect();
         assert_eq!(square(&input, 8, 100_000), square(&input, 8, 0));
     }
+
+    #[test]
+    fn threshold_boundary_at_len_takes_parallel_below_takes_serial() {
+        // The branch is `items.len() >= serial_threshold`: len == threshold goes parallel,
+        // len == threshold-1 stays serial. Both must equal the canonical ordered result --
+        // the boundary must not drop or reorder anything.
+        let threshold = 64usize;
+        let at: Vec<i64> = (0..threshold as i64).collect();
+        let below: Vec<i64> = (0..threshold as i64 - 1).collect();
+        let expect_at: Vec<i64> = at.iter().map(|&x| x * x).collect();
+        let expect_below: Vec<i64> = below.iter().map(|&x| x * x).collect();
+        assert_eq!(square(&at, 8, threshold), expect_at, "len == threshold -> parallel path, still ordered");
+        assert_eq!(square(&below, 8, threshold), expect_below, "len == threshold-1 -> serial path, still ordered");
+    }
+
+    #[test]
+    fn workers_le_one_is_always_serial_even_with_zero_threshold() {
+        // workers <= 1 => no pool built => serial regardless of a large input and threshold=0.
+        // workers == 0 must degrade gracefully (no panic), not attempt to build an empty pool.
+        let input: Vec<i64> = (0..5_000).collect();
+        let expect: Vec<i64> = input.iter().map(|&x| x * x).collect();
+        assert_eq!(square(&input, 1, 0), expect, "workers=1 stays serial");
+        assert_eq!(square(&input, 0, 0), expect, "workers=0 degrades to serial without panicking");
+    }
+
+    #[test]
+    fn identity_map_preserves_order_across_worker_matrix() {
+        // Identity map on 0..N: the output must be exactly the input, in order. A collect that
+        // lost rayon's positional ordering would scramble this for any workers > 1 -- x*x is
+        // monotonic on 0..N so this identity form is a stricter order check than `square`.
+        let input: Vec<i64> = (0..10_000).collect();
+        for workers in [1usize, 2, 3, 4, 8, 16] {
+            let pool = ComputePool::new(ComputeConfig { workers, serial_threshold: 0 });
+            assert_eq!(pool.map(&input, |&x| x), input, "workers={workers}: identity map must preserve input order");
+        }
+    }
 }
 
 const _: () = {

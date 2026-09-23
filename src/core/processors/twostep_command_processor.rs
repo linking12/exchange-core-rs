@@ -67,4 +67,35 @@ mod tests {
         let out = Dummy.map_users(&ctx, |_| true, |u| u.uid);
         assert_eq!(out, vec![1, 2, 3], "BTreeMap values() 有序 -> 结果按 uid 升序");
     }
+
+    #[test]
+    fn map_users_select_filters_but_keeps_uid_order() {
+        let mut risk = RiskEngine::new();
+        let mut ups = UserProfileService::new();
+        for uid in [5i64, 2, 8, 1, 4, 3] {
+            assert_eq!(ups.add_empty_user_profile(uid), CommandResultCode::Success);
+        }
+        let ssp = SymbolSpecificationProvider::new();
+        let ctx = TwoStepContext::new(&mut risk, &mut ups, &ssp);
+        // Only even uids selected; the survivors must still come back ascending, not in
+        // insertion order -- the filter runs over the ordered BTreeMap values.
+        let out = Dummy.map_users(&ctx, |u| u.uid % 2 == 0, |u| u.uid);
+        assert_eq!(out, vec![2, 4, 8], "filtered subset stays in ascending uid order");
+    }
+
+    #[test]
+    fn map_users_empty_when_no_users_or_all_filtered_out() {
+        let mut risk = RiskEngine::new();
+        let mut ups = UserProfileService::new();
+        let ssp = SymbolSpecificationProvider::new();
+        {
+            let ctx = TwoStepContext::new(&mut risk, &mut ups, &ssp);
+            assert!(Dummy.map_users(&ctx, |_| true, |u| u.uid).is_empty(), "no users -> empty");
+        }
+        for uid in [1i64, 2, 3] {
+            assert_eq!(ups.add_empty_user_profile(uid), CommandResultCode::Success);
+        }
+        let ctx = TwoStepContext::new(&mut risk, &mut ups, &ssp);
+        assert!(Dummy.map_users(&ctx, |_| false, |u| u.uid).is_empty(), "all filtered out -> empty");
+    }
 }

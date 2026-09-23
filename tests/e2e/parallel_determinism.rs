@@ -606,6 +606,199 @@ fn loan_scan_is_worker_invariant() {
     assert!(check.total_balance().is_global_zero(), "global balance must be conserved after the parallel loan scan");
 }
 
+#[test]
+fn cross_futures_liquidation_is_worker_invariant() {
+    // The futures liquidation scan's CROSS branch (check_cross_decisions, grouped by
+    // quote currency) is a distinct code path from the ISOLATED branch that
+    // `futures_scan_is_worker_invariant` covers. Exercise it under both worker counts.
+    use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecification;
+    use exchange_core_rs::core::common::margin_mode::MarginMode;
+    use exchange_core_rs::core::common::order_action::OrderAction;
+    use exchange_core_rs::core::common::order_type::OrderType;
+    use exchange_core_rs::core::common::symbol_type::SymbolType;
+    use exchange_core_rs::core::exchange_api::PlaceFuturesOrderRequest;
+    use std::collections::BTreeMap;
+
+    const BASE: i32 = 1;
+    const QUOTE: i32 = 2;
+    const FUT_SYMBOL: i32 = 905;
+    const NUM_PAIRS: i64 = 300;
+    const ENTRY: i64 = 10_000;
+    const DROP: i64 = 5_000;
+    const LEVERAGE: i32 = 20;
+    // Long side is thinly funded (just over the init margin of ENTRY/LEVERAGE = 500), so
+    // the crash to DROP drives its shared CROSS equity negative and it must liquidate;
+    // the short side is deep, stays healthy, and rests as the counterparty.
+    const THIN_BAL: i64 = 550;
+    const DEEP_BAL: i64 = 1_000_000;
+
+    fn futures_spec() -> CoreSymbolSpecification {
+        let mut mm = BTreeMap::new();
+        mm.insert(1_000i64, 5i64);
+        mm.insert(100_000i64, 10i64);
+        CoreSymbolSpecification {
+            symbol_id: FUT_SYMBOL,
+            symbol_type: SymbolType::FuturesContractPerpetual,
+            base_currency: BASE,
+            quote_currency: QUOTE,
+            base_scale_k: 1,
+            quote_scale_k: 1,
+            maintenance_margin: mm,
+            maintenance_margin_scale_k: 1_000,
+            ..Default::default()
+        }
+    }
+
+    fn build(api: &mut ExchangeApi) {
+        api.add_currency(BASE, 1);
+        api.add_currency(QUOTE, 1);
+        api.add_futures_symbol(futures_spec());
+        api.set_mark_price(FUT_SYMBOL, ENTRY);
+        api.enable_liquidation();
+
+        let mut order_id: i64 = 1;
+        for pair in 0..NUM_PAIRS {
+            let short_uid = pair * 2 + 1;
+            let long_uid = pair * 2 + 2;
+            api.add_user(short_uid);
+            api.add_user(long_uid);
+            api.balance_adjustment(short_uid, QUOTE, DEEP_BAL, short_uid);
+            api.balance_adjustment(long_uid, QUOTE, THIN_BAL, long_uid);
+
+            // short rests, long crosses -> both open a CROSS position at ENTRY.
+            api.place_futures_order(PlaceFuturesOrderRequest {
+                order_id, uid: short_uid, symbol: FUT_SYMBOL, price: ENTRY, size: 1,
+                action: OrderAction::Ask, order_type: OrderType::Gtc, leverage: LEVERAGE,
+                margin_mode: MarginMode::Cross, reduce_only: false,
+            });
+            order_id += 1;
+            api.place_futures_order(PlaceFuturesOrderRequest {
+                order_id, uid: long_uid, symbol: FUT_SYMBOL, price: ENTRY, size: 1,
+                action: OrderAction::Bid, order_type: OrderType::Gtc, leverage: LEVERAGE,
+                margin_mode: MarginMode::Cross, reduce_only: false,
+            });
+            order_id += 1;
+        }
+    }
+
+    fn run(api: &mut ExchangeApi) {
+        api.set_mark_price(FUT_SYMBOL, DROP);
+    }
+
+    assert_workers_equivalent(build, run);
+
+    // Non-vacuous: the CROSS scan must actually have fired a liquidation-related event.
+    use exchange_core_rs::core::common::fund_event::FundEventType;
+    let mut check = ExchangeApi::new();
+    build(&mut check);
+    run(&mut check);
+    assert!(
+        check.last_fund_events().iter().any(|e| matches!(
+            e.event_type,
+            FundEventType::LiquidationClose
+                | FundEventType::LiquidationFee
+                | FundEventType::IfPositionClose
+                | FundEventType::MarginAlert
+                | FundEventType::LiquidationAlert
+        )),
+        "CROSS futures scan must produce at least one liquidation-related fund event, got: {:?}",
+        check.last_fund_events().iter().map(|e| e.event_type).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn hedge_funding_settlement_is_worker_invariant() {
+    // The funding scan reads both the symbol leg AND the -symbol leg for HEDGE users
+    // (user_funding_contribution's HEDGE branch). Every worker-invariance e2e above is
+    // ONEWAY; this builds genuine dual-leg HEDGE users so that dual-leg path is covered.
+    use exchange_core_rs::core::common::core_symbol_specification::CoreSymbolSpecification;
+    use exchange_core_rs::core::common::margin_mode::MarginMode;
+    use exchange_core_rs::core::common::order_action::OrderAction;
+    use exchange_core_rs::core::common::order_type::OrderType;
+    use exchange_core_rs::core::common::symbol_type::SymbolType;
+    use exchange_core_rs::core::exchange_api::PlaceFuturesOrderRequest;
+
+    const BASE: i32 = 1;
+    const QUOTE: i32 = 2;
+    const FUT_SYMBOL: i32 = 906;
+    const NUM_HEDGE: i64 = 100;
+    const PX: i64 = 100;
+    const SIZE: i64 = 10;
+    const BAL: i64 = 10_000_000;
+    const FIRST_HEDGE_UID: i64 = 1;
+
+    fn place(api: &mut ExchangeApi, order_id: i64, uid: i64, action: OrderAction) {
+        api.place_futures_order(PlaceFuturesOrderRequest {
+            order_id, uid, symbol: FUT_SYMBOL, price: PX, size: SIZE, action,
+            order_type: OrderType::Gtc, leverage: 1, margin_mode: MarginMode::Isolated,
+            reduce_only: false,
+        });
+    }
+
+    fn build(api: &mut ExchangeApi) {
+        api.add_currency(BASE, 1);
+        api.add_currency(QUOTE, 1);
+        api.add_futures_symbol(CoreSymbolSpecification {
+            symbol_id: FUT_SYMBOL,
+            symbol_type: SymbolType::FuturesContractPerpetual,
+            base_currency: BASE,
+            quote_currency: QUOTE,
+            base_scale_k: 1,
+            quote_scale_k: 1,
+            ..Default::default()
+        });
+        api.set_mark_price(FUT_SYMBOL, PX);
+
+        let mut order_id: i64 = 1;
+        for i in 0..NUM_HEDGE {
+            let hedge_uid = i * 3 + 1;
+            let cp_long = i * 3 + 2;
+            let cp_short = i * 3 + 3;
+            for uid in [hedge_uid, cp_long, cp_short] {
+                api.add_user(uid);
+                api.balance_adjustment(uid, QUOTE, BAL, uid);
+            }
+            api.adjust_position_mode(hedge_uid, true);
+
+            // Long leg: hedge bids (rests), cp_long asks (fully matches -> no resting remainder).
+            place(api, order_id, hedge_uid, OrderAction::Bid);
+            order_id += 1;
+            place(api, order_id, cp_long, OrderAction::Ask);
+            order_id += 1;
+            // Short leg (HEDGE second direction at -symbol): hedge asks (rests), cp_short bids.
+            place(api, order_id, hedge_uid, OrderAction::Ask);
+            order_id += 1;
+            place(api, order_id, cp_short, OrderAction::Bid);
+            order_id += 1;
+        }
+    }
+
+    fn run(api: &mut ExchangeApi) {
+        // action=Bid -> the LONG leg pays, the -symbol SHORT leg receives.
+        api.settle_funding_fees(FUT_SYMBOL, OrderAction::Bid, 100, 1000, 999_999);
+    }
+
+    assert_workers_equivalent(build, run);
+
+    // Non-vacuous: the first hedge user must actually hold both legs, and funding must
+    // have debited its LONG (payer) leg, plus a settlement event must have fired.
+    use exchange_core_rs::core::common::fund_event::FundEventType;
+    let mut check = ExchangeApi::new();
+    build(&mut check);
+    let long_before = check.user_position(FIRST_HEDGE_UID, FUT_SYMBOL).expect("hedge long leg (key=symbol) must exist").profit;
+    assert!(
+        check.user_position(FIRST_HEDGE_UID, -FUT_SYMBOL).is_some(),
+        "hedge user must hold a SHORT leg at -symbol"
+    );
+    run(&mut check);
+    let long_after = check.user_position(FIRST_HEDGE_UID, FUT_SYMBOL).expect("hedge long leg must still exist").profit;
+    assert!(long_after < long_before, "action=Bid funding must debit the hedge user's LONG (payer) leg profit");
+    assert!(
+        check.last_fund_events().iter().any(|e| e.event_type == FundEventType::FundingfeeSettlement),
+        "HEDGE funding settlement must produce at least one FundingfeeSettlement event"
+    );
+}
+
 // =====================================================================================
 // Task 1: full-coverage random-stream property test + repeat-run / worker-matrix checks.
 //
