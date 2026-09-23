@@ -1,0 +1,94 @@
+# 差分模糊(seed=0):期货持仓 + SETTLE_FUNDING/MARGIN_ADJUST 交织。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_FUT id=10000 kind=PERP base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 feeScale=0 initMargin=1 initMarginScaleK=100
+MARK sym=10000 price=10000
+USER uid=1
+BAL uid=1 cur=2 amount=1000000000000 txid=1
+USER uid=2
+BAL uid=2 cur=2 amount=1000000000000 txid=2
+USER uid=3
+BAL uid=3 cur=2 amount=1000000000000 txid=3
+USER uid=4
+BAL uid=4 cur=2 amount=1000000000000 txid=4
+PLACE_FUT oid=5001 uid=2 sym=10000 price=9942 size=5 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5002 uid=3 sym=10000 price=9942 size=5 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5003 uid=3 sym=10000 price=10076 size=2 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5004 uid=4 sym=10000 price=10076 size=2 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5005 uid=2 sym=10000 price=9987 size=4 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5006 uid=3 sym=10000 price=9987 size=4 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5007 uid=1 sym=10000 price=9932 size=4 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5008 uid=2 sym=10000 price=9932 size=4 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5009 uid=1 sym=10000 price=10038 size=2 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5010 uid=2 sym=10000 price=10038 size=2 action=ASK type=GTC leverage=3 margin=ISOLATED
+MARGIN_ADJUST uid=3 sym=10000 action=BID amount=1816 margin=ISOLATED txid=5
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=1773 margin=ISOLATED txid=6
+SETTLE_FUNDING sym=10000 action=ASK rate=2 rateScaleK=346 txid=7
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=2673 margin=ISOLATED txid=8
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=466 margin=ISOLATED txid=9
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=1832 margin=ISOLATED txid=10
+MARGIN_ADJUST uid=3 sym=10000 action=BID amount=3219 margin=ISOLATED txid=11
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=1238 margin=ISOLATED txid=12
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=291 margin=ISOLATED txid=13
+PLACE_FUT oid=5011 uid=3 sym=10000 price=9983 size=5 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5012 uid=4 sym=10000 price=9983 size=5 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5013 uid=2 sym=10000 price=10090 size=4 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5014 uid=3 sym=10000 price=10090 size=4 action=ASK type=GTC leverage=2 margin=ISOLATED
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=2537 margin=ISOLATED txid=14
+PLACE_FUT oid=5015 uid=2 sym=10000 price=10027 size=3 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5016 uid=3 sym=10000 price=10027 size=3 action=ASK type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5017 uid=1 sym=10000 price=10094 size=3 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5018 uid=2 sym=10000 price=10094 size=3 action=BID type=GTC leverage=3 margin=ISOLATED
+SETTLE_FUNDING sym=10000 action=BID rate=1 rateScaleK=140 txid=15
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=198 margin=ISOLATED txid=16
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=3572 margin=ISOLATED txid=17
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=4137 margin=ISOLATED txid=18
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=1454 margin=ISOLATED txid=19
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=3636 margin=ISOLATED txid=20
+SETTLE_FUNDING sym=10000 action=BID rate=4 rateScaleK=322 txid=21
+PLACE_FUT oid=5019 uid=1 sym=10000 price=9942 size=2 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5020 uid=2 sym=10000 price=9942 size=2 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5021 uid=2 sym=10000 price=10035 size=3 action=ASK type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5022 uid=3 sym=10000 price=10035 size=3 action=BID type=GTC leverage=2 margin=ISOLATED
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=3901 margin=ISOLATED txid=22
+SETTLE_FUNDING sym=10000 action=BID rate=2 rateScaleK=366 txid=23
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=1173 margin=ISOLATED txid=24
+PLACE_FUT oid=5023 uid=2 sym=10000 price=9943 size=3 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5024 uid=3 sym=10000 price=9943 size=3 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5025 uid=2 sym=10000 price=9915 size=5 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5026 uid=3 sym=10000 price=9915 size=5 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5027 uid=2 sym=10000 price=9904 size=3 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5028 uid=3 sym=10000 price=9904 size=3 action=BID type=GTC leverage=3 margin=ISOLATED
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=2898 margin=ISOLATED txid=25
+PLACE_FUT oid=5029 uid=1 sym=10000 price=9965 size=5 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=5030 uid=2 sym=10000 price=9965 size=5 action=BID type=GTC leverage=3 margin=ISOLATED
+MARGIN_ADJUST uid=3 sym=10000 action=BID amount=2927 margin=ISOLATED txid=26
+SETTLE_FUNDING sym=10000 action=ASK rate=1 rateScaleK=343 txid=27
+PLACE_FUT oid=5031 uid=2 sym=10000 price=9998 size=2 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=5032 uid=3 sym=10000 price=9998 size=2 action=ASK type=GTC leverage=1 margin=ISOLATED
+SETTLE_FUNDING sym=10000 action=ASK rate=4 rateScaleK=269 txid=28
+SETTLE_FUNDING sym=10000 action=BID rate=1 rateScaleK=431 txid=29
+SETTLE_FUNDING sym=10000 action=ASK rate=4 rateScaleK=123 txid=30
+SETTLE_FUNDING sym=10000 action=ASK rate=3 rateScaleK=357 txid=31
+SETTLE_FUNDING sym=10000 action=ASK rate=2 rateScaleK=193 txid=32
+SETTLE_FUNDING sym=10000 action=BID rate=3 rateScaleK=337 txid=33
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=3930 margin=ISOLATED txid=34
+MARGIN_ADJUST uid=4 sym=10000 action=BID amount=1134 margin=ISOLATED txid=35
+MARGIN_ADJUST uid=3 sym=10000 action=BID amount=2949 margin=ISOLATED txid=36
+MARGIN_ADJUST uid=2 sym=10000 action=BID amount=3867 margin=ISOLATED txid=37
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=695 margin=ISOLATED txid=38
+SETTLE_FUNDING sym=10000 action=BID rate=1 rateScaleK=347 txid=39
+PLACE_FUT oid=5033 uid=2 sym=10000 price=10048 size=4 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5034 uid=3 sym=10000 price=10048 size=4 action=ASK type=GTC leverage=2 margin=ISOLATED
+MARGIN_ADJUST uid=3 sym=10000 action=BID amount=2225 margin=ISOLATED txid=40
+PLACE_FUT oid=5035 uid=2 sym=10000 price=9993 size=3 action=ASK type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=5036 uid=3 sym=10000 price=9993 size=3 action=BID type=GTC leverage=2 margin=ISOLATED
+MARGIN_ADJUST uid=2 sym=10000 action=BID amount=3384 margin=ISOLATED txid=41
+MARGIN_ADJUST uid=1 sym=10000 action=BID amount=4723 margin=ISOLATED txid=42
+SETTLE_FUNDING sym=10000 action=BID rate=2 rateScaleK=209 txid=43
+MARGIN_ADJUST uid=2 sym=10000 action=BID amount=353 margin=ISOLATED txid=44
+MARGIN_ADJUST uid=2 sym=10000 action=BID amount=3717 margin=ISOLATED txid=45
+SETTLE_FUNDING sym=10000 action=BID rate=3 rateScaleK=104 txid=46
+SETTLE_FUNDING sym=10000 action=ASK rate=3 rateScaleK=443 txid=47
+SETTLE_FUNDING sym=10000 action=ASK rate=2 rateScaleK=112 txid=48
+SETTLE_FUNDING sym=10000 action=ASK rate=2 rateScaleK=302 txid=49

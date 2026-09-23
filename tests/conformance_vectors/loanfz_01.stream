@@ -1,0 +1,74 @@
+# 差分模糊(seed=1):isolated 贷款 CREATE/REPAY/COLLATERAL 交织。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_SPOT id=500 base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 initialLtv=6000 liqLtv=8000 marginCallLtv=0 maxAmount=0 maxTermDays=0
+MARK sym=500 price=1000
+POOL_DEPOSIT cur=2 amount=100000000 txid=1
+USER uid=1
+BAL uid=1 cur=1 amount=1000000 txid=2
+USER uid=2
+BAL uid=2 cur=1 amount=1000000 txid=3
+USER uid=3
+BAL uid=3 cur=1 amount=1000000 txid=4
+USER uid=4
+BAL uid=4 cur=1 amount=1000000 txid=5
+LOAN_CREATE uid=3 sym=500 loanId=9001 collateral=102 principal=17 rateMode=0 ts=0 txid=6
+LOAN_REPAY uid=3 loanId=9001 repay=20 ts=0 txid=7
+LOAN_CREATE uid=4 sym=500 loanId=9002 collateral=1363 principal=325 rateMode=0 ts=0 txid=8
+LOAN_ADD_COLLATERAL uid=3 loanId=9001 amount=396 txid=9 ts=0
+LOAN_ADD_COLLATERAL uid=3 loanId=9001 amount=487 txid=10 ts=0
+LOAN_REPAY uid=3 loanId=9001 repay=335 ts=0 txid=11
+LOAN_REPAY uid=4 loanId=9002 repay=6 ts=0 txid=12
+LOAN_CREATE uid=1 sym=500 loanId=9003 collateral=801 principal=358 rateMode=0 ts=0 txid=13
+LOAN_REPAY uid=1 loanId=9003 repay=282 ts=0 txid=14
+LOAN_ADD_COLLATERAL uid=3 loanId=9001 amount=413 txid=15 ts=0
+LOAN_RELEASE_COLLATERAL uid=1 loanId=9003 amount=117 txid=16 ts=0
+LOAN_ADD_COLLATERAL uid=1 loanId=9003 amount=342 txid=17 ts=0
+LOAN_ADD_COLLATERAL uid=4 loanId=9002 amount=428 txid=18 ts=0
+LOAN_REPAY uid=1 loanId=9003 repay=361 ts=0 txid=19
+LOAN_ADD_COLLATERAL uid=3 loanId=9001 amount=304 txid=20 ts=0
+LOAN_CREATE uid=4 sym=500 loanId=9004 collateral=1795 principal=795 rateMode=0 ts=0 txid=21
+LOAN_CREATE uid=3 sym=500 loanId=9005 collateral=1682 principal=599 rateMode=0 ts=0 txid=22
+LOAN_REPAY uid=4 loanId=9004 repay=63 ts=0 txid=23
+LOAN_CREATE uid=3 sym=500 loanId=9006 collateral=1074 principal=30 rateMode=0 ts=0 txid=24
+LOAN_REPAY uid=3 loanId=9005 repay=349 ts=0 txid=25
+LOAN_RELEASE_COLLATERAL uid=4 loanId=9004 amount=46 txid=26 ts=0
+LOAN_CREATE uid=3 sym=500 loanId=9007 collateral=761 principal=107 rateMode=0 ts=0 txid=27
+LOAN_CREATE uid=2 sym=500 loanId=9008 collateral=949 principal=782 rateMode=0 ts=0 txid=28
+LOAN_CREATE uid=1 sym=500 loanId=9009 collateral=343 principal=73 rateMode=0 ts=0 txid=29
+LOAN_CREATE uid=3 sym=500 loanId=9010 collateral=1455 principal=410 rateMode=0 ts=0 txid=30
+LOAN_REPAY uid=3 loanId=9007 repay=136 ts=0 txid=31
+LOAN_REPAY uid=3 loanId=9006 repay=297 ts=0 txid=32
+LOAN_CREATE uid=1 sym=500 loanId=9011 collateral=1144 principal=208 rateMode=0 ts=0 txid=33
+LOAN_CREATE uid=3 sym=500 loanId=9012 collateral=1667 principal=778 rateMode=0 ts=0 txid=34
+LOAN_RELEASE_COLLATERAL uid=1 loanId=9011 amount=153 txid=35 ts=0
+LOAN_CREATE uid=1 sym=500 loanId=9013 collateral=1773 principal=655 rateMode=0 ts=0 txid=36
+LOAN_CREATE uid=1 sym=500 loanId=9014 collateral=101 principal=203 rateMode=0 ts=0 txid=37
+LOAN_REPAY uid=1 loanId=9014 repay=356 ts=0 txid=38
+LOAN_CREATE uid=3 sym=500 loanId=9015 collateral=545 principal=413 rateMode=0 ts=0 txid=39
+LOAN_CREATE uid=2 sym=500 loanId=9016 collateral=719 principal=211 rateMode=0 ts=0 txid=40
+LOAN_CREATE uid=2 sym=500 loanId=9017 collateral=1116 principal=626 rateMode=0 ts=0 txid=41
+LOAN_RELEASE_COLLATERAL uid=3 loanId=9001 amount=258 txid=42 ts=0
+LOAN_REPAY uid=1 loanId=9014 repay=366 ts=0 txid=43
+LOAN_RELEASE_COLLATERAL uid=3 loanId=9006 amount=121 txid=44 ts=0
+LOAN_CREATE uid=2 sym=500 loanId=9018 collateral=1433 principal=637 rateMode=0 ts=0 txid=45
+LOAN_CREATE uid=3 sym=500 loanId=9019 collateral=1579 principal=272 rateMode=0 ts=0 txid=46
+LOAN_REPAY uid=3 loanId=9019 repay=335 ts=0 txid=47
+LOAN_RELEASE_COLLATERAL uid=1 loanId=9014 amount=106 txid=48 ts=0
+LOAN_CREATE uid=3 sym=500 loanId=9020 collateral=584 principal=75 rateMode=0 ts=0 txid=49
+LOAN_CREATE uid=3 sym=500 loanId=9021 collateral=1022 principal=114 rateMode=0 ts=0 txid=50
+LOAN_CREATE uid=1 sym=500 loanId=9022 collateral=1631 principal=680 rateMode=0 ts=0 txid=51
+LOAN_CREATE uid=1 sym=500 loanId=9023 collateral=841 principal=728 rateMode=0 ts=0 txid=52
+LOAN_CREATE uid=3 sym=500 loanId=9024 collateral=557 principal=416 rateMode=0 ts=0 txid=53
+LOAN_CREATE uid=2 sym=500 loanId=9025 collateral=693 principal=571 rateMode=0 ts=0 txid=54
+LOAN_ADD_COLLATERAL uid=3 loanId=9007 amount=446 txid=55 ts=0
+LOAN_CREATE uid=4 sym=500 loanId=9026 collateral=1146 principal=519 rateMode=0 ts=0 txid=56
+LOAN_CREATE uid=1 sym=500 loanId=9027 collateral=560 principal=527 rateMode=0 ts=0 txid=57
+LOAN_RELEASE_COLLATERAL uid=4 loanId=9026 amount=39 txid=58 ts=0
+LOAN_CREATE uid=3 sym=500 loanId=9028 collateral=670 principal=47 rateMode=0 ts=0 txid=59
+LOAN_CREATE uid=3 sym=500 loanId=9029 collateral=508 principal=206 rateMode=0 ts=0 txid=60
+LOAN_REPAY uid=1 loanId=9014 repay=342 ts=0 txid=61
+LOAN_RELEASE_COLLATERAL uid=1 loanId=9009 amount=192 txid=62 ts=0
+LOAN_CREATE uid=1 sym=500 loanId=9030 collateral=100 principal=229 rateMode=0 ts=0 txid=63
+LOAN_CREATE uid=4 sym=500 loanId=9031 collateral=1809 principal=157 rateMode=0 ts=0 txid=64
+LOAN_CREATE uid=3 sym=500 loanId=9032 collateral=707 principal=195 rateMode=0 ts=0 txid=65

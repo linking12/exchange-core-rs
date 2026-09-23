@@ -1,0 +1,73 @@
+# 差分模糊(seed=6):期货 PLACE_FUT + CANCEL/MOVE/LEVERAGE 交织。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_FUT id=10000 kind=PERP base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 feeScale=0 initMargin=1 initMarginScaleK=100
+MARK sym=10000 price=10000
+USER uid=1
+BAL uid=1 cur=2 amount=1000000000000 txid=1
+USER uid=2
+BAL uid=2 cur=2 amount=1000000000000 txid=2
+USER uid=3
+BAL uid=3 cur=2 amount=1000000000000 txid=3
+USER uid=4
+BAL uid=4 cur=2 amount=1000000000000 txid=4
+PLACE_FUT oid=4001 uid=1 sym=10000 price=10002 size=3 action=BID type=GTC leverage=5 margin=ISOLATED
+LEVERAGE uid=1 sym=10000 leverage=5
+LEVERAGE uid=1 sym=10000 leverage=7
+MOVE oid=4001 uid=1 sym=10000 price=9768
+LEVERAGE uid=1 sym=10000 leverage=6
+CANCEL oid=4001 uid=1 sym=10000
+MOVE oid=4001 uid=1 sym=10000 price=9866
+PLACE_FUT oid=4002 uid=2 sym=10000 price=10052 size=1 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4003 uid=2 sym=10000 price=10009 size=4 action=ASK type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=4004 uid=4 sym=10000 price=9741 size=1 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4005 uid=2 sym=10000 price=10382 size=1 action=ASK type=GTC leverage=4 margin=CROSS
+CANCEL oid=4002 uid=2 sym=10000
+CANCEL oid=4004 uid=4 sym=10000
+CANCEL oid=4004 uid=4 sym=10000
+PLACE_FUT oid=4006 uid=1 sym=10000 price=10008 size=4 action=BID type=GTC leverage=5 margin=CROSS
+PLACE_FUT oid=4007 uid=4 sym=10000 price=9840 size=1 action=ASK type=GTC leverage=1 margin=ISOLATED
+LEVERAGE uid=1 sym=10000 leverage=1
+PLACE_FUT oid=4008 uid=4 sym=10000 price=9845 size=1 action=ASK type=GTC leverage=5 margin=CROSS
+PLACE_FUT oid=4009 uid=2 sym=10000 price=9730 size=2 action=ASK type=GTC leverage=5 margin=ISOLATED
+PLACE_FUT oid=4010 uid=1 sym=10000 price=10027 size=1 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=4011 uid=3 sym=10000 price=10088 size=4 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=4012 uid=1 sym=10000 price=10176 size=4 action=BID type=GTC leverage=4 margin=CROSS
+PLACE_FUT oid=4013 uid=2 sym=10000 price=10179 size=4 action=ASK type=GTC leverage=2 margin=ISOLATED
+MOVE oid=4010 uid=1 sym=10000 price=10174
+PLACE_FUT oid=4014 uid=4 sym=10000 price=9777 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=4015 uid=4 sym=10000 price=9974 size=4 action=ASK type=GTC leverage=2 margin=ISOLATED
+MOVE oid=4010 uid=1 sym=10000 price=10097
+PLACE_FUT oid=4016 uid=2 sym=10000 price=9968 size=2 action=ASK type=GTC leverage=5 margin=CROSS
+PLACE_FUT oid=4017 uid=4 sym=10000 price=10347 size=4 action=ASK type=GTC leverage=4 margin=ISOLATED
+PLACE_FUT oid=4018 uid=1 sym=10000 price=10271 size=4 action=BID type=GTC leverage=4 margin=ISOLATED
+PLACE_FUT oid=4019 uid=3 sym=10000 price=10323 size=3 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4020 uid=1 sym=10000 price=9608 size=2 action=BID type=GTC leverage=5 margin=ISOLATED
+PLACE_FUT oid=4021 uid=3 sym=10000 price=9906 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=4022 uid=2 sym=10000 price=9737 size=2 action=ASK type=GTC leverage=3 margin=CROSS
+PLACE_FUT oid=4023 uid=1 sym=10000 price=10149 size=1 action=BID type=GTC leverage=2 margin=CROSS
+PLACE_FUT oid=4024 uid=2 sym=10000 price=9690 size=3 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4025 uid=1 sym=10000 price=10157 size=1 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4026 uid=1 sym=10000 price=10331 size=4 action=BID type=GTC leverage=4 margin=CROSS
+LEVERAGE uid=2 sym=10000 leverage=3
+MOVE oid=4024 uid=2 sym=10000 price=10159
+LEVERAGE uid=4 sym=10000 leverage=2
+LEVERAGE uid=2 sym=10000 leverage=2
+PLACE_FUT oid=4027 uid=4 sym=10000 price=9911 size=2 action=ASK type=GTC leverage=5 margin=CROSS
+PLACE_FUT oid=4028 uid=2 sym=10000 price=9620 size=1 action=ASK type=GTC leverage=5 margin=ISOLATED
+PLACE_FUT oid=4029 uid=3 sym=10000 price=10357 size=1 action=BID type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4030 uid=2 sym=10000 price=10029 size=1 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=4031 uid=1 sym=10000 price=9918 size=4 action=BID type=GTC leverage=2 margin=CROSS
+PLACE_FUT oid=4032 uid=4 sym=10000 price=10222 size=2 action=ASK type=GTC leverage=2 margin=ISOLATED
+MOVE oid=4023 uid=1 sym=10000 price=10177
+PLACE_FUT oid=4033 uid=1 sym=10000 price=9796 size=4 action=BID type=GTC leverage=1 margin=ISOLATED
+PLACE_FUT oid=4034 uid=2 sym=10000 price=9817 size=3 action=ASK type=GTC leverage=2 margin=CROSS
+MOVE oid=4021 uid=3 sym=10000 price=9809
+PLACE_FUT oid=4035 uid=1 sym=10000 price=9843 size=2 action=BID type=GTC leverage=5 margin=ISOLATED
+CANCEL oid=4017 uid=4 sym=10000
+PLACE_FUT oid=4036 uid=4 sym=10000 price=9646 size=3 action=ASK type=GTC leverage=4 margin=CROSS
+PLACE_FUT oid=4037 uid=1 sym=10000 price=9947 size=4 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=4038 uid=1 sym=10000 price=9849 size=1 action=BID type=GTC leverage=2 margin=ISOLATED
+PLACE_FUT oid=4039 uid=4 sym=10000 price=10060 size=4 action=ASK type=GTC leverage=3 margin=ISOLATED
+PLACE_FUT oid=4040 uid=2 sym=10000 price=10227 size=2 action=ASK type=GTC leverage=4 margin=CROSS
+PLACE_FUT oid=4041 uid=4 sym=10000 price=9620 size=4 action=ASK type=GTC leverage=1 margin=CROSS
