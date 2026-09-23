@@ -1657,8 +1657,11 @@ impl RiskEngine {
             MatcherEventType::Reject | MatcherEventType::Reduce => {
                 // 同上守卫：强平单被拒/减时同样无 pending 可释放。
                 if !is_liquidation {
-                    up.positions.get_mut(&position_key).unwrap().pending_release(action, mte.size);
-                    Self::push_futures_event(fund_events, last_price_cache, FundEventType::UnlockPending, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+                    let released = up.positions.get_mut(&position_key).unwrap().pending_release(action, mte.size);
+                    // 与 TRADE 分支一致：仅在确有释放时才发 UnlockPending(避免零增量幻影通知)。
+                    if released > 0 {
+                        Self::push_futures_event(fund_events, last_price_cache, FundEventType::UnlockPending, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+                    }
                 }
             }
             MatcherEventType::BinaryEvent => {
