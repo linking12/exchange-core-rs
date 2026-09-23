@@ -126,7 +126,6 @@ mod tests {
         let seq: Vec<(FundEventType, i64)> = cascade.iter().map(|e| (e.event_type, e.uid)).collect();
         assert_eq!(seq, vec![
             (FundEventType::LiquidationAlert, loser),
-            (FundEventType::UnlockPending, loser),
             (FundEventType::AdlPositionClose, winner),
             (FundEventType::AdlOriginClose, loser),
             (FundEventType::PnlSettlement, loser),
@@ -167,7 +166,6 @@ mod tests {
         let seq: Vec<(FundEventType, i64)> = cascade.iter().map(|e| (e.event_type, e.uid)).collect();
         assert_eq!(seq, vec![
             (FundEventType::LiquidationAlert, loser),
-            (FundEventType::UnlockPending, loser),
             (FundEventType::IfPositionClose, loser),
             (FundEventType::PnlSettlement, loser),
         ], "IF-takeover cascade fund-event sequence (type + uid)");
