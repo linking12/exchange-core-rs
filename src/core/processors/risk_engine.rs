@@ -1672,18 +1672,10 @@ impl RiskEngine {
             }
 
             let profit = up.positions.get(&position_key).unwrap().profit;
+            let removed = risk.remove_position_record(up, position_key, spec, quote_currency_spec);
             if profit != 0 {
-                let profit_scaled = arithmetic::size_price_to_currency_scale(
-                    profit,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
-                up.add_to_account(currency, profit_scaled);
-                Self::push_futures_event(fund_events, last_price_cache, FundEventType::PnlSettlement, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+                Self::push_futures_event(fund_events, &risk.last_price_cache, FundEventType::PnlSettlement, event_order_id, &removed, spec, up, ssp);
             }
-
-            risk.remove_position_record(up, position_key, spec.symbol_id);
         }
     }
 
@@ -1752,9 +1744,23 @@ impl RiskEngine {
         });
     }
 
-    pub(crate) fn remove_position_record(&mut self, up: &mut UserProfile, position_key: i32, symbol: i32) {
-        self.liquidation_engine.on_position_closed(up, symbol, position_key);
-        up.positions.remove(&position_key);
+    pub(crate) fn remove_position_record(
+        &mut self,
+        up: &mut UserProfile,
+        position_key: i32,
+        spec: &CoreSymbolSpecification,
+        currency_spec: &CoreCurrencySpecification,
+    ) -> SymbolPositionRecord {
+        let (currency, profit) = {
+            let p = up.positions.get(&position_key).unwrap();
+            (p.currency, p.profit)
+        };
+        if profit != 0 {
+            let profit_scaled = arithmetic::size_price_to_currency_scale(profit, spec.base_scale_k, spec.quote_scale_k, currency_spec.currency_scale_k);
+            up.add_to_account(currency, profit_scaled);
+        }
+        self.liquidation_engine.on_position_closed(up, spec.symbol_id, position_key);
+        up.positions.remove(&position_key).unwrap()
     }
 
     pub(crate) fn check_liquidations(&mut self, cmd: &mut OrderCommand, ups: &mut UserProfileService, ssp: &SymbolSpecificationProvider) {
@@ -1806,17 +1812,10 @@ impl RiskEngine {
         }
 
         let profit = up.positions.get(&position_key).unwrap().profit;
+        let removed = self.remove_position_record(up, position_key, spec, currency_spec);
         if profit != 0 {
-            let profit_scaled = arithmetic::size_price_to_currency_scale(
-                profit,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
-            up.add_to_account(currency, profit_scaled);
-            Self::push_futures_event(fund_events, &self.last_price_cache, FundEventType::PnlSettlement, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+            Self::push_futures_event(fund_events, &self.last_price_cache, FundEventType::PnlSettlement, order_id, &removed, spec, up, ssp);
         }
-        self.remove_position_record(up, position_key, spec.symbol_id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -5689,11 +5688,13 @@ mod tests {
 
         #[test]
         fn remove_position_record_prunes_closing_holder_and_keeps_others() {
-            let (mut engine, mut ups, _ssp) = setup_with_payer_and_receiver(10, 100, 100);
+            let (mut engine, mut ups, ssp) = setup_with_payer_and_receiver(10, 100, 100);
             assert!(engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap().contains(&PAYER_UID));
 
+            let spec = ssp.get_symbol(FUT_SYMBOL).unwrap().clone();
+            let currency_spec = ssp.get_currency(spec.quote_currency).unwrap().clone();
             let up = ups.get_mut(PAYER_UID).unwrap();
-            engine.remove_position_record(up, FUT_SYMBOL, FUT_SYMBOL);
+            engine.remove_position_record(up, FUT_SYMBOL, &spec, &currency_spec);
 
             assert!(!ups.get(PAYER_UID).unwrap().positions.contains_key(&FUT_SYMBOL), "closed position removed from profile");
             let holders = engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL);

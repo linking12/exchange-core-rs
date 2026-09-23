@@ -351,18 +351,8 @@ impl RiskEngineCommandDispatcher {
                     RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&key).unwrap(), &spec, up, ssp);
                 }
 
-                let profit = up.positions.get(&key).unwrap().profit;
-                if profit != 0 {
-                    let profit_scaled = arithmetic::size_price_to_currency_scale(
-                        profit,
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    );
-                    up.add_to_account(currency, profit_scaled);
-                }
-                RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::PnlSettlement, order_id, up.positions.get(&key).unwrap(), &spec, up, ssp);
-                engine.remove_position_record(up, key, spec.symbol_id);
+                let removed = engine.remove_position_record(up, key, &spec, &currency_spec);
+                RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::PnlSettlement, order_id, &removed, &spec, up, ssp);
             }
         }
         CommandResultCode::Success
