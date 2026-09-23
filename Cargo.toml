@@ -30,6 +30,10 @@ exchange-core-rs = { path = ".", features = ["testing"] }
 name = "engine_throughput"
 harness = false
 
+[[bench]]
+name = "parallel_scan_bench"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1
