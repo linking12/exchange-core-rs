@@ -74,6 +74,7 @@ impl RiskEngine {
         self.last_price_cache.clear();
         self.loan_service = LoanService::new();
         self.liquidation_service = LiquidationService::new();
+        self.binary_cmd = BinaryCommandsProcessor::new();
     }
 
     pub fn compute_pool(&self) -> &ComputePool {

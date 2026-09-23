@@ -78,6 +78,7 @@ impl MatchingEngineRouter {
 
     pub fn reset(&mut self) {
         self.books.clear();
+        self.binary_cmd = BinaryCommandsProcessor::new();
     }
 
     pub fn user_orders(&self, uid: i64) -> Vec<(i32, Order)> {

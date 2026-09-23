@@ -162,7 +162,7 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
             .map(|u| (u, payer_dir))
             .chain(receiver_fees.iter().filter(|(_, &f)| f != 0).map(|(u, _)| (u, recv_dir)))
         {
-            if let Some(up) = ctx.ups.get(uid) {
+            if let Some(up) = ctx.ups.get(uid).filter(|u| u.user_status == UserStatus::Active) {
                 if let Some(pos) = up.positions.values().find(|p| p.symbol == symbol && p.open_volume != 0 && p.direction == dir) {
                     RiskEngine::push_futures_event(&mut cmd.fund_events, lpc, FundEventType::FundingfeeSettlement, order_id, pos, &spec, up, ctx.ssp);
                 } else {

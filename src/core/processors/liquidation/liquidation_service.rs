@@ -6,6 +6,7 @@ use crate::core::common::position_direction::PositionDirection;
 use crate::core::common::symbol_position_record::SymbolPositionRecord;
 use crate::core::common::user_profile::UserProfile;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
+#[cfg(test)]
 use crate::core::processors::user_profile_service::UserProfileService;
 use crate::core::utils::core_arithmetic_utils::{mul_exact, size_price_to_currency_scale};
 
@@ -166,6 +167,7 @@ impl LiquidationService {
     /// path because `adl_eligibility` is non-replicated scratch (excluded from `state_hash`,
     /// recomputed each scan). If a caller ever needs the live write-back it should be proven by
     /// a real caller rather than this wrapper.
+    #[cfg(test)]
     pub fn compute_profitable_positions_by_symbol(
         ups: &mut UserProfileService,
         ssp: &SymbolSpecificationProvider,
