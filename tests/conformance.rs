@@ -1,5 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+
+use exchange_core_rs::core::exchange_core::ExchangeCore;
 
 use exchange_core_rs::core::common::cmd::command_result_code::CommandResultCode;
 use exchange_core_rs::core::common::cmd::order_command::OrderCommand;
@@ -160,6 +162,71 @@ fn fe_allowed(t: FundEventType) -> bool {
             | LoanCollateralChange
             | ResetFee
     )
+}
+
+fn verify_derived_state_consistency(core: &ExchangeCore) {
+    let mut expected_pos: BTreeMap<i32, BTreeSet<i64>> = BTreeMap::new();
+    for up in core.ups.users.values() {
+        for p in up.positions.values() {
+            expected_pos.entry(p.symbol).or_default().insert(up.uid);
+        }
+    }
+    assert_eq!(
+        core.risk.liquidation_engine.symbol_to_users, expected_pos,
+        "symbol_to_users drifted from live positions (ghost or missing holder)"
+    );
+
+    let mut expected_iso: BTreeMap<i32, BTreeSet<i64>> = BTreeMap::new();
+    for up in core.ups.users.values() {
+        for l in up.isolated_loans.values() {
+            if !l.is_empty() {
+                expected_iso.entry(l.symbol_id).or_default().insert(up.uid);
+            }
+        }
+    }
+    assert_eq!(
+        core.risk.liquidation_engine.loan_liquidation_engine.isolated_loan_symbol_to_users, expected_iso,
+        "isolated_loan_symbol_to_users drifted from live loans"
+    );
+
+    for users in core.risk.liquidation_engine.loan_liquidation_engine.cross_loan_currency_to_users.values() {
+        for &uid in users {
+            let up = core.ups.get(uid).expect("cross-indexed uid must exist");
+            let has_exposure = up.cross_loans.values().any(|l| !l.is_empty())
+                || up.cross_loan_collateral.values().any(|&a| a > 0);
+            assert!(has_exposure, "cross_loan_currency_to_users has fully-exited ghost uid={uid}");
+        }
+    }
+
+    let mut expected_borrowed: BTreeMap<i32, i64> = BTreeMap::new();
+    for up in core.ups.users.values() {
+        for l in up.isolated_loans.values() {
+            *expected_borrowed.entry(l.loan_currency).or_insert(0) += l.outstanding_principal;
+        }
+        for l in up.cross_loans.values() {
+            *expected_borrowed.entry(l.loan_currency).or_insert(0) += l.outstanding_principal;
+        }
+    }
+    let live_borrowed = &core.risk.loan_service.loan_pool_borrowed;
+    let currencies: BTreeSet<i32> = live_borrowed.keys().chain(expected_borrowed.keys()).copied().collect();
+    for c in currencies {
+        let live = live_borrowed.get(&c).copied().unwrap_or(0);
+        let exp = expected_borrowed.get(&c).copied().unwrap_or(0);
+        assert_eq!(live, exp, "loan_pool_borrowed[{c}] drifted from sum of outstanding principals");
+    }
+
+    for up in core.ups.users.values() {
+        if up.exchange_locked.values().any(|&v| v > 0) {
+            let has_spot_order = core.matching.user_orders(up.uid).iter().any(|(sym, _)| {
+                core.ssp.get_symbol(*sym).is_some_and(|s| s.symbol_type == SymbolType::CurrencyExchangePair)
+            });
+            assert!(has_spot_order, "exchange_locked positive but user {} has no open spot order (leaked lock)", up.uid);
+        }
+    }
+
+    for (sym, n) in &core.risk.liquidation_service.notionals {
+        assert_eq!(n.reserved, 0, "IF notional[{sym}] reserved not released at command boundary");
+    }
 }
 
 fn replay(stream: &str) -> (ExchangeApi, Vec<String>, Vec<String>, Vec<String>) {
@@ -463,7 +530,7 @@ fn replay(stream: &str) -> (ExchangeApi, Vec<String>, Vec<String>, Vec<String>) 
     let mut fund_lines = fund_sink.borrow().clone();
     fund_lines.sort();
     let match_lines = match_sink.borrow().clone();
-    api.core().verify_index_consistency();
+    verify_derived_state_consistency(api.core());
     (api, results, fund_lines, match_lines)
 }
 

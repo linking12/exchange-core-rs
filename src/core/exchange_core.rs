@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
@@ -68,41 +67,6 @@ impl ExchangeCore {
 
     pub fn with_serialization_processor(&mut self, ser_proc: Box<dyn SerializationProcessor>) {
         self.ser_proc = ser_proc;
-    }
-
-    pub fn verify_index_consistency(&self) {
-        let mut expected_pos: BTreeMap<i32, BTreeSet<i64>> = BTreeMap::new();
-        for up in self.ups.users.values() {
-            for p in up.positions.values() {
-                expected_pos.entry(p.symbol).or_default().insert(up.uid);
-            }
-        }
-        assert_eq!(
-            self.risk.liquidation_engine.symbol_to_users, expected_pos,
-            "symbol_to_users drifted from live positions (ghost or missing holder)"
-        );
-
-        let mut expected_iso: BTreeMap<i32, BTreeSet<i64>> = BTreeMap::new();
-        for up in self.ups.users.values() {
-            for l in up.isolated_loans.values() {
-                if !l.is_empty() {
-                    expected_iso.entry(l.symbol_id).or_default().insert(up.uid);
-                }
-            }
-        }
-        assert_eq!(
-            self.risk.liquidation_engine.loan_liquidation_engine.isolated_loan_symbol_to_users, expected_iso,
-            "isolated_loan_symbol_to_users drifted from live loans"
-        );
-
-        for users in self.risk.liquidation_engine.loan_liquidation_engine.cross_loan_currency_to_users.values() {
-            for &uid in users {
-                let up = self.ups.get(uid).expect("cross-indexed uid must exist");
-                let has_exposure = up.cross_loans.values().any(|l| !l.is_empty())
-                    || up.cross_loan_collateral.values().any(|&a| a > 0);
-                assert!(has_exposure, "cross_loan_currency_to_users has fully-exited ghost uid={uid}");
-            }
-        }
     }
 
     pub fn with_command_submitter(&mut self, submitter: Rc<RefCell<dyn CommandSubmitter>>) {
