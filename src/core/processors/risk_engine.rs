@@ -5685,6 +5685,23 @@ mod tests {
             assert_eq!(ups.get(PAYER_UID).unwrap().positions.get(&FUT_SYMBOL).unwrap().profit, 0, "no event -> no settlement");
             assert_eq!(total_conserved(&ups), before);
         }
+
+        #[test]
+        fn funding_prunes_closed_position_ghost_from_index_keeps_holders() {
+            let (mut engine, mut ups, ssp) = setup_with_payer_and_receiver(10, 100, 100);
+            // A ghost: registered in the index but its position was fully closed (no record).
+            let ghost = 999i64;
+            assert_eq!(ups.add_empty_user_profile(ghost), CommandResultCode::Success);
+            engine.liquidation_engine.on_position_opened(ghost, FUT_SYMBOL);
+            assert!(engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap().contains(&ghost));
+
+            let mut cmd = funding_cmd(OrderAction::Bid, 5, 1000);
+            run_full_pipeline(&mut engine, &mut cmd, &mut ups, &ssp);
+
+            let holders = engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap();
+            assert!(!holders.contains(&ghost), "ghost with no position must be pruned by the funding scan");
+            assert!(holders.contains(&PAYER_UID) && holders.contains(&RECEIVER_UID), "real holders must be kept");
+        }
     }
 
     mod if_takeover_tests {

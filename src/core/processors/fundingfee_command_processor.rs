@@ -108,6 +108,15 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
         let symbol = spec.symbol_id;
         let rate = cmd.price;
         let rate_scale_k = cmd.size;
+        // Lazily prune closed-position ghosts from the index (same as the liquidation targeted
+        // scan's retain), so it stays ~current holders and funding doesn't drift toward a full
+        // scan. Resting-order records (open_volume==0, pending>0) are kept, like live maintenance.
+        if let Some(holders) = ctx.risk.liquidation_engine.symbol_to_users.get_mut(&symbol) {
+            holders.retain(|&uid| ctx.ups.get(uid).is_some_and(|u| u.positions.values().any(|p| p.symbol == symbol)));
+            if holders.is_empty() {
+                ctx.risk.liquidation_engine.symbol_to_users.remove(&symbol);
+            }
+        }
         let profiles: Vec<&UserProfile> = ctx
             .risk
             .liquidation_engine
