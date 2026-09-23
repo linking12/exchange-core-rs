@@ -1,0 +1,7 @@
+# 边界:余额不足下单被拒(RISK_NSF result-code)
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_SPOT id=100 base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0
+USER uid=1
+BAL uid=1 cur=2 amount=100 txid=1
+PLACE oid=1 uid=1 sym=100 price=100 size=10 action=BID type=GTC reserve=100

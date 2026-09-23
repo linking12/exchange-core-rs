@@ -1,0 +1,293 @@
+R 3 SUCCESS
+R 4 SUCCESS
+R 5 SUCCESS
+R 6 SUCCESS
+R 7 SUCCESS
+R 8 SUCCESS
+R 9 SUCCESS
+R 10 SUCCESS
+R 11 SUCCESS
+R 12 SUCCESS
+R 13 SUCCESS
+R 14 SUCCESS
+R 15 SUCCESS
+R 16 SUCCESS
+R 17 SUCCESS
+R 18 SUCCESS
+R 19 SUCCESS
+R 20 SUCCESS
+R 21 SUCCESS
+R 22 SUCCESS
+R 23 SUCCESS
+R 24 SUCCESS
+R 25 SUCCESS
+R 26 SUCCESS
+R 27 SUCCESS
+R 28 SUCCESS
+R 29 SUCCESS
+R 30 SUCCESS
+R 31 SUCCESS
+R 32 SUCCESS
+R 33 SUCCESS
+R 34 SUCCESS
+R 35 SUCCESS
+R 36 SUCCESS
+R 37 SUCCESS
+R 38 SUCCESS
+R 39 SUCCESS
+R 40 SUCCESS
+R 41 SUCCESS
+R 42 SUCCESS
+R 43 SUCCESS
+R 44 SUCCESS
+R 45 SUCCESS
+R 46 SUCCESS
+R 47 SUCCESS
+R 48 SUCCESS
+R 49 SUCCESS
+R 50 SUCCESS
+R 51 SUCCESS
+R 52 SUCCESS
+R 53 SUCCESS
+R 54 SUCCESS
+R 55 SUCCESS
+R 56 SUCCESS
+R 57 SUCCESS
+R 58 SUCCESS
+R 59 SUCCESS
+R 60 SUCCESS
+R 61 SUCCESS
+R 62 SUCCESS
+R 63 SUCCESS
+R 64 SUCCESS
+R 65 SUCCESS
+R 66 SUCCESS
+R 67 SUCCESS
+R 68 SUCCESS
+R 69 SUCCESS
+R 70 SUCCESS
+R 71 SUCCESS
+R 72 SUCCESS
+R 73 SUCCESS
+R 74 SUCCESS
+STATE
+A 1 1 1000000054
+A 1 2 999999461617
+A 2 1 999999962
+A 2 2 1000000377033
+A 3 1 1000000022
+A 3 2 999999786976
+A 4 1 999999962
+A 4 2 1000000374374
+EVENTS
+FE DEPOSIT uid=1 cur=1 free=1000000000 locked=0
+FE DEPOSIT uid=1 cur=2 free=1000000000000 locked=0
+FE DEPOSIT uid=2 cur=1 free=1000000000 locked=0
+FE DEPOSIT uid=2 cur=2 free=1000000000000 locked=0
+FE DEPOSIT uid=3 cur=1 free=1000000000 locked=0
+FE DEPOSIT uid=3 cur=2 free=1000000000000 locked=0
+FE DEPOSIT uid=4 cur=1 free=1000000000 locked=0
+FE DEPOSIT uid=4 cur=2 free=1000000000000 locked=0
+FE LOCKED uid=1 cur=2 free=999999458041 locked=64572
+FE LOCKED uid=1 cur=2 free=999999519771 locked=42876
+FE LOCKED uid=1 cur=2 free=999999560471 locked=42060
+FE LOCKED uid=1 cur=2 free=999999601459 locked=51625
+FE LOCKED uid=1 cur=2 free=999999648156 locked=74067
+FE LOCKED uid=1 cur=2 free=999999721646 locked=10179
+FE LOCKED uid=1 cur=2 free=999999729420 locked=72576
+FE LOCKED uid=1 cur=2 free=999999799070 locked=42636
+FE LOCKED uid=1 cur=2 free=999999840440 locked=20852
+FE LOCKED uid=1 cur=2 free=999999859756 locked=21326
+FE LOCKED uid=1 cur=2 free=999999876347 locked=72968
+FE LOCKED uid=1 cur=2 free=999999947675 locked=52325
+FE LOCKED uid=2 cur=1 free=271876204 locked=728123770
+FE LOCKED uid=2 cur=1 free=271876208 locked=728123766
+FE LOCKED uid=2 cur=1 free=271876211 locked=728123766
+FE LOCKED uid=2 cur=1 free=271876213 locked=728123764
+FE LOCKED uid=2 cur=1 free=271876215 locked=728123762
+FE LOCKED uid=2 cur=1 free=271876219 locked=728123763
+FE LOCKED uid=2 cur=1 free=271876224 locked=728123758
+FE LOCKED uid=2 cur=1 free=999999970 locked=12
+FE LOCKED uid=2 cur=1 free=999999972 locked=10
+FE LOCKED uid=2 cur=1 free=999999977 locked=11
+FE LOCKED uid=2 cur=1 free=999999982 locked=10
+FE LOCKED uid=2 cur=1 free=999999983 locked=5
+FE LOCKED uid=2 cur=1 free=999999987 locked=1
+FE LOCKED uid=2 cur=1 free=999999987 locked=3
+FE LOCKED uid=2 cur=1 free=999999987 locked=3
+FE LOCKED uid=2 cur=1 free=999999988 locked=4
+FE LOCKED uid=2 cur=1 free=999999990 locked=5
+FE LOCKED uid=2 cur=1 free=999999992 locked=3
+FE LOCKED uid=2 cur=1 free=999999995 locked=5
+FE LOCKED uid=2 cur=1 free=999999999 locked=1
+FE LOCKED uid=3 cur=2 free=999999746212 locked=71029
+FE LOCKED uid=3 cur=2 free=999999775687 locked=41554
+FE LOCKED uid=3 cur=2 free=999999786652 locked=21016
+FE LOCKED uid=3 cur=2 free=999999787338 locked=29903
+FE LOCKED uid=3 cur=2 free=999999806938 locked=58500
+FE LOCKED uid=3 cur=2 free=999999834963 locked=87997
+FE LOCKED uid=3 cur=2 free=999999841178 locked=139622
+FE LOCKED uid=3 cur=2 free=999999911857 locked=88143
+FE LOCKED uid=3 cur=2 free=999999932751 locked=67249
+FE LOCKED uid=4 cur=1 free=999999959 locked=7
+FE LOCKED uid=4 cur=1 free=999999961 locked=6
+FE LOCKED uid=4 cur=1 free=999999962 locked=4
+FE LOCKED uid=4 cur=1 free=999999964 locked=3
+FE LOCKED uid=4 cur=1 free=999999964 locked=5
+FE LOCKED uid=4 cur=1 free=999999967 locked=2
+FE LOCKED uid=4 cur=1 free=999999969 locked=12
+FE LOCKED uid=4 cur=1 free=999999972 locked=9
+FE LOCKED uid=4 cur=1 free=999999976 locked=7
+FE LOCKED uid=4 cur=1 free=999999978 locked=9
+FE LOCKED uid=4 cur=1 free=999999985 locked=15
+FE LOCKED uid=4 cur=1 free=999999985 locked=15
+FE LOCKED uid=4 cur=1 free=999999985 locked=7
+FE LOCKED uid=4 cur=1 free=999999986 locked=8
+FE LOCKED uid=4 cur=1 free=999999987 locked=13
+FE LOCKED uid=4 cur=1 free=999999993 locked=7
+FE LOCKED uid=4 cur=1 free=999999996 locked=4
+FE LOCKED uid=4 cur=1 free=999999997 locked=3
+FE LOCKED uid=4 cur=1 free=999999998 locked=2
+FE TRANSFER uid=1 cur=1 free=1000000005 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000012 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000014 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000016 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000020 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000023 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000027 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000028 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000035 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000040 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000044 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000048 locked=0
+FE TRANSFER uid=1 cur=1 free=1000000054 locked=0
+FE TRANSFER uid=1 cur=2 free=999999461617 locked=0
+FE TRANSFER uid=1 cur=2 free=999999522613 locked=0
+FE TRANSFER uid=1 cur=2 free=999999562647 locked=0
+FE TRANSFER uid=1 cur=2 free=999999602531 locked=0
+FE TRANSFER uid=1 cur=2 free=999999653084 locked=0
+FE TRANSFER uid=1 cur=2 free=999999722223 locked=0
+FE TRANSFER uid=1 cur=2 free=999999730497 locked=41472
+FE TRANSFER uid=1 cur=2 free=999999731825 locked=0
+FE TRANSFER uid=1 cur=2 free=999999801996 locked=0
+FE TRANSFER uid=1 cur=2 free=999999841706 locked=0
+FE TRANSFER uid=1 cur=2 free=999999861292 locked=0
+FE TRANSFER uid=1 cur=2 free=999999881082 locked=0
+FE TRANSFER uid=1 cur=2 free=999999949315 locked=0
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123758
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123760
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123761
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123762
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123763
+FE TRANSFER uid=2 cur=1 free=271876204 locked=728123766
+FE TRANSFER uid=2 cur=1 free=271876211 locked=728123763
+FE TRANSFER uid=2 cur=1 free=271876219 locked=728123758
+FE TRANSFER uid=2 cur=1 free=999999977 locked=5
+FE TRANSFER uid=2 cur=1 free=999999988 locked=0
+FE TRANSFER uid=2 cur=1 free=999999988 locked=2
+FE TRANSFER uid=2 cur=1 free=999999990 locked=2
+FE TRANSFER uid=2 cur=1 free=999999990 locked=4
+FE TRANSFER uid=2 cur=1 free=999999995 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000050685 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000060580 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000080370 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000099956 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000119746 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000177586 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000225480 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000255843 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000295727 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000325640 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000335761 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000345995 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000356341 locked=0
+FE TRANSFER uid=2 cur=2 free=1000000377033 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000002 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000008 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000010 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000014 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000017 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000019 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000020 locked=0
+FE TRANSFER uid=3 cur=1 free=1000000022 locked=0
+FE TRANSFER uid=3 cur=2 free=999999786976 locked=0
+FE TRANSFER uid=3 cur=2 free=999999807566 locked=28821
+FE TRANSFER uid=3 cur=2 free=999999807634 locked=9607
+FE TRANSFER uid=3 cur=2 free=999999807668 locked=0
+FE TRANSFER uid=3 cur=2 free=999999836481 locked=67249
+FE TRANSFER uid=3 cur=2 free=999999836617 locked=28821
+FE TRANSFER uid=3 cur=2 free=999999855711 locked=67249
+FE TRANSFER uid=3 cur=2 free=999999913551 locked=67249
+FE TRANSFER uid=4 cur=1 free=999999962 locked=0
+FE TRANSFER uid=4 cur=1 free=999999966 locked=0
+FE TRANSFER uid=4 cur=1 free=999999967 locked=0
+FE TRANSFER uid=4 cur=1 free=999999969 locked=0
+FE TRANSFER uid=4 cur=1 free=999999969 locked=11
+FE TRANSFER uid=4 cur=1 free=999999969 locked=2
+FE TRANSFER uid=4 cur=1 free=999999969 locked=3
+FE TRANSFER uid=4 cur=1 free=999999969 locked=5
+FE TRANSFER uid=4 cur=1 free=999999969 locked=9
+FE TRANSFER uid=4 cur=1 free=999999978 locked=3
+FE TRANSFER uid=4 cur=1 free=999999978 locked=5
+FE TRANSFER uid=4 cur=1 free=999999985 locked=2
+FE TRANSFER uid=4 cur=1 free=999999985 locked=5
+FE TRANSFER uid=4 cur=1 free=999999987 locked=5
+FE TRANSFER uid=4 cur=1 free=999999987 locked=7
+FE TRANSFER uid=4 cur=2 free=1000000058338 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000078258 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000097458 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000127485 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000167629 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000186859 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000196474 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000215910 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000254782 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000274954 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000285049 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000305239 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000324385 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000333958 locked=0
+FE TRANSFER uid=4 cur=2 free=1000000374374 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999461617 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999522613 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999562647 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999602531 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999653084 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999722223 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999730497 locked=41472
+FE UNLOCKED uid=1 cur=2 free=999999731825 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999801996 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999841706 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999861292 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999881082 locked=0
+FE UNLOCKED uid=1 cur=2 free=999999949315 locked=0
+FE UNLOCKED uid=2 cur=1 free=1000000000 locked=0
+FE UNLOCKED uid=2 cur=1 free=271876211 locked=728123763
+FE UNLOCKED uid=2 cur=1 free=271876215 locked=728123762
+FE UNLOCKED uid=2 cur=1 free=999999977 locked=5
+FE UNLOCKED uid=2 cur=1 free=999999977 locked=5
+FE UNLOCKED uid=2 cur=1 free=999999988 locked=2
+FE UNLOCKED uid=2 cur=1 free=999999988 locked=2
+FE UNLOCKED uid=2 cur=1 free=999999988 locked=4
+FE UNLOCKED uid=2 cur=1 free=999999995 locked=0
+FE UNLOCKED uid=3 cur=2 free=999999786976 locked=0
+FE UNLOCKED uid=3 cur=2 free=999999807566 locked=28821
+FE UNLOCKED uid=3 cur=2 free=999999807634 locked=9607
+FE UNLOCKED uid=3 cur=2 free=999999807634 locked=9607
+FE UNLOCKED uid=3 cur=2 free=999999807634 locked=9607
+FE UNLOCKED uid=3 cur=2 free=999999807634 locked=9607
+FE UNLOCKED uid=3 cur=2 free=999999807668 locked=0
+FE UNLOCKED uid=3 cur=2 free=999999836481 locked=67249
+FE UNLOCKED uid=3 cur=2 free=999999836617 locked=28821
+FE UNLOCKED uid=3 cur=2 free=999999851517 locked=129283
+FE UNLOCKED uid=3 cur=2 free=999999855711 locked=67249
+FE UNLOCKED uid=3 cur=2 free=999999913551 locked=67249
+FE UNLOCKED uid=4 cur=1 free=1000000000 locked=0
+FE UNLOCKED uid=4 cur=1 free=999999966 locked=0
+FE UNLOCKED uid=4 cur=1 free=999999966 locked=1
+FE UNLOCKED uid=4 cur=1 free=999999967 locked=0
+FE UNLOCKED uid=4 cur=1 free=999999969 locked=0
+FE UNLOCKED uid=4 cur=1 free=999999978 locked=5
+FE UNLOCKED uid=4 cur=1 free=999999987 locked=13
+FE UNLOCKED uid=4 cur=1 free=999999987 locked=13
+FE UNLOCKED uid=4 cur=1 free=999999987 locked=7

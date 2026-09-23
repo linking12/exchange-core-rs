@@ -1,0 +1,22 @@
+R 3 SUCCESS
+R 4 SUCCESS
+R 5 SUCCESS
+R 6 SUCCESS
+R 7 SUCCESS
+R 8 SUCCESS
+R 9 SUCCESS
+R 10 MATCHING_UNKNOWN_ORDER_ID
+STATE
+A 1 1 999995
+A 1 2 450
+A 2 1 5
+A 2 2 999550
+EVENTS
+FE DEPOSIT uid=1 cur=1 free=1000000 locked=0
+FE DEPOSIT uid=2 cur=2 free=1000000 locked=0
+FE LOCKED uid=1 cur=1 free=999990 locked=10
+FE LOCKED uid=2 cur=2 free=999550 locked=450
+FE TRANSFER uid=1 cur=1 free=999990 locked=5
+FE TRANSFER uid=1 cur=2 free=450 locked=0
+FE TRANSFER uid=2 cur=1 free=5 locked=0
+FE TRANSFER uid=2 cur=2 free=999550 locked=0

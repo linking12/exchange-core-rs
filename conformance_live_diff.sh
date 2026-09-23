@@ -20,8 +20,8 @@ echo "[1/3] 生成新鲜随机向量 → 临时目录"
 (cd "$RS_DIR" && cargo run --quiet --example gen_conformance_fuzz -- --out "$TMP_DIR" --seed "$SEED_BASE")
 
 echo "[2/3] Java 导出器(oracle)对临时目录生成 golden"
-(cd "$REPO_DIR" && "$MVN" -q -pl exchange-core -Dtest=ConformanceExporter \
-    -Dconformance.vectors.dir="$TMP_DIR" -DfailIfNoTests=false test)
+(cd "$REPO_DIR/exchange-core" && "$MVN" -q test -Dtest=ConformanceExporter#exportGoldenVectors \
+    -Dconformance.vectors.dir="$TMP_DIR" -DfailIfNoTests=false)
 
 echo "[3/3] Rust replay 同一批 .stream,逐行断言 == .golden"
 (cd "$RS_DIR" && CONFORMANCE_VECTORS_DIR="$TMP_DIR" cargo test --quiet --test conformance)
