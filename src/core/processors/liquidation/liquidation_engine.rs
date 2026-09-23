@@ -19,6 +19,7 @@ use crate::core::processors::liquidation::liquidation_flow::{LiquidationFlow, Li
 use crate::core::processors::liquidation::liquidation_service::LiquidationService;
 use crate::core::processors::loan::loan_liquidation_engine::LoanLiquidationEngine;
 use crate::core::processors::loan::loan_service::LoanService;
+use crate::core::processors::parallel::ComputePool;
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
 use crate::core::processors::user_profile_service::UserProfileService;
@@ -37,6 +38,11 @@ enum IsolatedCheck {
     Liquidate(LiquidationDecision),
     Alert,
     Healthy,
+}
+
+struct LiquidationAssessment {
+    decisions: Vec<LiquidationDecision>,
+    alerts: Vec<FundEvent>,
 }
 
 #[derive(Debug, Default)]
@@ -82,6 +88,7 @@ impl LiquidationEngine {
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
+        pool: &ComputePool,
         fund_events: &mut Vec<FundEvent>,
     ) {
         if !self.is_running {
@@ -96,8 +103,9 @@ impl LiquidationEngine {
         } else {
             ups.users.keys().copied().filter(|&uid| Self::covered_by_scan_slice(cmd, uid)).collect()
         };
-        for uid in &uids {
-            self.check_user(*uid, cmd.timestamp, ups, ssp, last_price_cache, fund_events);
+        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|p| (uid, Self::decide_user_liquidation(uid, p, ssp, last_price_cache))));
+        for (uid, outcome) in outcomes.into_iter().flatten() {
+            self.apply_user_liquidation(uid, outcome, ups, ssp, last_price_cache, cmd.timestamp, fund_events);
         }
 
         if targeted {
@@ -110,56 +118,60 @@ impl LiquidationEngine {
                 }
             }
         }
-        self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events);
+        self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events, pool);
+    }
+
+    fn decide_user_liquidation(
+        uid: i64,
+        profile: &UserProfile,
+        ssp: &SymbolSpecificationProvider,
+        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
+    ) -> LiquidationAssessment {
+        let mut decisions = Vec::new();
+        let mut alerts = Vec::new();
+        let mut cross_by_currency: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+        for (&key, position) in profile.positions.iter() {
+            if position.open_volume == 0 {
+                continue;
+            }
+            let spec = match ssp.get_symbol(position.symbol) {
+                Some(s) => s,
+                None => continue,
+            };
+            if !spec.symbol_type.is_futures_contract() {
+                continue;
+            }
+            let mark_price = match last_price_cache.get(&position.symbol) {
+                Some(r) => r.mark_price,
+                None => continue,
+            };
+            if position.margin_mode == MarginMode::Isolated {
+                match Self::check_isolated_decision(key, position, spec, mark_price) {
+                    IsolatedCheck::Liquidate(d) => decisions.push(d),
+                    IsolatedCheck::Alert => alerts.push(Self::notification_event(FundEventType::MarginAlert, uid, position, spec, profile, ssp, last_price_cache)),
+                    IsolatedCheck::Healthy => {}
+                }
+            } else {
+                cross_by_currency.entry(spec.quote_currency).or_default().push(key);
+            }
+        }
+        Self::check_cross_decisions(uid, profile, &cross_by_currency, ssp, last_price_cache, &mut decisions, &mut alerts);
+        LiquidationAssessment { decisions, alerts }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn check_user(
+    fn apply_user_liquidation(
         &mut self,
         uid: i64,
-        ts: i64,
+        outcome: LiquidationAssessment,
         ups: &mut UserProfileService,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
+        ts: i64,
         fund_events: &mut Vec<FundEvent>,
     ) {
-        let decisions: Vec<LiquidationDecision> = {
-            let profile = match ups.get(uid) {
-                Some(p) => p,
-                None => return,
-            };
-            let mut decisions = Vec::new();
-            let mut cross_by_currency: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
-            for (&key, position) in profile.positions.iter() {
-                if position.open_volume == 0 {
-                    continue;
-                }
-                let spec = match ssp.get_symbol(position.symbol) {
-                    Some(s) => s,
-                    None => continue,
-                };
-                if !spec.symbol_type.is_futures_contract() {
-                    continue;
-                }
-                let mark_price = match last_price_cache.get(&position.symbol) {
-                    Some(r) => r.mark_price,
-                    None => continue,
-                };
-                if position.margin_mode == MarginMode::Isolated {
-                    match Self::check_isolated_decision(key, position, spec, mark_price) {
-                        IsolatedCheck::Liquidate(d) => decisions.push(d),
-                        IsolatedCheck::Alert => fund_events.push(Self::notification_event(FundEventType::MarginAlert, uid, position, spec, profile, ssp, last_price_cache)),
-                        IsolatedCheck::Healthy => {}
-                    }
-                } else {
-                    cross_by_currency.entry(spec.quote_currency).or_default().push(key);
-                }
-            }
-            Self::check_cross_decisions(uid, profile, &cross_by_currency, ssp, last_price_cache, &mut decisions, fund_events);
-            decisions
-        };
-
-        for d in decisions {
+        fund_events.extend(outcome.alerts);
+        for d in outcome.decisions {
             let profile = match ups.get_mut(uid) {
                 Some(p) => p,
                 None => return,
@@ -668,7 +680,7 @@ mod tests {
         insert_long(&mut ups, UID);
         lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(50));
         let cmd = markprice_cmd(FUT_SYMBOL, 1_000);
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
         assert!(out.borrow().is_empty(), "a follower neither detects nor submits");
         assert!(ups.get(UID).unwrap().positions[&FUT_SYMBOL].liquidation_flow.is_none());
     }
@@ -682,7 +694,7 @@ mod tests {
         lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(50));
         let cmd = markprice_cmd(FUT_SYMBOL, 5_000);
 
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
 
         assert_eq!(out.borrow().len(), 1, "one FORCE is triggered");
         let force = out.borrow()[0].clone();
@@ -708,7 +720,7 @@ mod tests {
         lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(100));
         let cmd = markprice_cmd(FUT_SYMBOL, 1_000);
 
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
 
         assert!(out.borrow().is_empty(), "a healthy position does not trigger anything");
         assert!(ups.get(UID).unwrap().positions[&FUT_SYMBOL].liquidation_flow.is_none());
@@ -723,8 +735,8 @@ mod tests {
         lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(50));
         let cmd = markprice_cmd(FUT_SYMBOL, 5_000);
 
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
 
         assert_eq!(out.borrow().len(), 1, "flow already in progress -> the second scan does not resubmit (idempotency gate)");
     }
@@ -739,7 +751,7 @@ mod tests {
         lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(50));
         let scan = OrderCommand { command: OrderCommandType::LiquidationScan, symbol: -1, uid: 1, size: 2, timestamp: 5_000, ..Default::default() };
 
-        engine.check_positions(&scan, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&scan, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
 
         assert_eq!(out.borrow().len(), 1, "only uid=1 is within the slice");
         assert_eq!(out.borrow()[0].uid, 1);
@@ -793,7 +805,7 @@ mod tests {
         lpc.insert(SYMBOL, LastPriceCacheRecord::with_mark(1_000_000i64));
         let cmd = markprice_cmd(SYMBOL, 1_000);
 
-        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &mut Vec::new());
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut Vec::new());
         assert!(out.borrow().is_empty(), "a healthy CROSS account whose scaled maintenance truncates to zero must not be mistakenly liquidated (and must not divide by zero)");
         assert!(ups.get(U).unwrap().positions[&SYMBOL].liquidation_flow.is_none());
     }

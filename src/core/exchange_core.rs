@@ -86,6 +86,10 @@ impl ExchangeCore {
         self.results_consumer = consumer;
     }
 
+    pub fn with_compute_pool(&mut self, cfg: crate::core::processors::parallel::ComputeConfig) {
+        self.risk.set_compute_config(cfg);
+    }
+
     pub fn process_command(&mut self, cmd: &mut OrderCommand) {
         log::trace!(
             "process_command enter: cmd={:?} uid={} symbol={} order_id={}",

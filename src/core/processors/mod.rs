@@ -7,6 +7,7 @@ pub mod loan;
 pub mod loanratepricing_command_processor;
 pub mod binary_commands_processor;
 pub mod matching_engine_router;
+pub mod parallel;
 pub mod risk_engine;
 pub mod risk_engine_command_dispatcher;
 pub mod symbol_specification_provider;

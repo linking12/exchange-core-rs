@@ -118,6 +118,54 @@ impl LiquidationService {
         pos.open_price_sum += spend;
     }
 
+    pub fn user_profitable_positions(
+        profile: &UserProfile,
+        ssp: &SymbolSpecificationProvider,
+        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
+    ) -> Vec<(i32, SymbolPositionRecord)> {
+        let mut out: Vec<(i32, SymbolPositionRecord)> = Vec::new();
+        let mut cross_by_currency: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+
+        for (key, position) in &profile.positions {
+            if position.open_volume == 0 {
+                continue;
+            }
+            let spec = match ssp.get_symbol(position.symbol) {
+                Some(s) => s,
+                None => continue,
+            };
+            if !spec.symbol_type.is_futures_contract() {
+                continue;
+            }
+            let mark_price = match last_price_cache.get(&position.symbol) {
+                Some(r) => r.mark_price,
+                None => continue,
+            };
+
+            if position.margin_mode == MarginMode::Isolated {
+                if position.estimate_unrealized_profit(mark_price) > 0 {
+                    out.push((position.symbol, position.clone()));
+                }
+            } else {
+                cross_by_currency.entry(spec.quote_currency).or_default().push(*key);
+            }
+        }
+
+        for (currency, keys) in cross_by_currency {
+            Self::cross_candidates_if_user_safe(profile, currency, &keys, ssp, last_price_cache, &mut out);
+        }
+
+        out
+    }
+
+    /// Serial fold of `user_profitable_positions` over every user. As of the parallel-scan refactor the ADL
+    /// path scans via `user_profitable_positions` + `map_users` directly, so this method has no in-crate
+    /// non-test callers; it is retained as public API and additionally performs the live
+    /// write-back of the computed CROSS `adl_eligibility` factor into `UserProfileService`,
+    /// which the read-only `user_profitable_positions` cannot do. That write-back is safe to omit on the ADL
+    /// path because `adl_eligibility` is non-replicated scratch (excluded from `state_hash`,
+    /// recomputed each scan). If a caller ever needs the live write-back it should be proven by
+    /// a real caller rather than this wrapper.
     pub fn compute_profitable_positions_by_symbol(
         ups: &mut UserProfileService,
         ssp: &SymbolSpecificationProvider,
@@ -127,42 +175,22 @@ impl LiquidationService {
 
         let uids: Vec<i64> = ups.users.keys().copied().collect();
         for uid in uids {
-            let profile = match ups.users.get_mut(&uid) {
-                Some(p) => p,
-                None => continue,
+            let Some(profile) = ups.users.get(&uid) else {
+                continue;
             };
-            let position_keys: Vec<i32> = profile.positions.keys().copied().collect();
+            let per_user = Self::user_profitable_positions(profile, ssp, last_price_cache);
 
-            let mut cross_by_currency: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
-            for key in &position_keys {
-                let position = &profile.positions[key];
-                if position.open_volume == 0 {
-                    continue;
-                }
-                let spec = match ssp.get_symbol(position.symbol) {
-                    Some(s) => s,
-                    None => continue,
-                };
-                if !spec.symbol_type.is_futures_contract() {
-                    continue;
-                }
-                let mark_price = match last_price_cache.get(&position.symbol) {
-                    Some(r) => r.mark_price,
-                    None => continue,
-                };
-
-                if position.margin_mode == MarginMode::Isolated {
-
-                    if position.estimate_unrealized_profit(mark_price) > 0 {
-                        result.entry(position.symbol).or_default().push(position.clone());
+            if let Some(profile_mut) = ups.users.get_mut(&uid) {
+                for (_, candidate) in &per_user {
+                    let key = profile_mut.create_positions_key_of(candidate);
+                    if let Some(live) = profile_mut.positions.get_mut(&key) {
+                        live.adl_eligibility = candidate.adl_eligibility;
                     }
-                } else {
-                    cross_by_currency.entry(spec.quote_currency).or_default().push(*key);
                 }
             }
 
-            for (currency, keys) in cross_by_currency {
-                Self::add_cross_positions_if_user_safe(profile, currency, &keys, ssp, last_price_cache, &mut result);
+            for (symbol, candidate) in per_user {
+                result.entry(symbol).or_default().push(candidate);
             }
         }
 
@@ -213,13 +241,13 @@ impl LiquidationService {
         saturating_multiply(saturating_multiply(actual_leverage, unrealized_pnl), pos.adl_eligibility)
     }
 
-    fn add_cross_positions_if_user_safe(
-        profile: &mut UserProfile,
+    fn cross_candidates_if_user_safe(
+        profile: &UserProfile,
         currency: i32,
         keys: &[i32],
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
-        result: &mut BTreeMap<i32, Vec<SymbolPositionRecord>>,
+        out: &mut Vec<(i32, SymbolPositionRecord)>,
     ) {
         let currency_spec = match ssp.get_currency(currency) {
             Some(c) => c.clone(),
@@ -261,17 +289,17 @@ impl LiquidationService {
         let factor = (mul_exact(equity - total_maintenance, 100) / total_maintenance).clamp(0, 100);
 
         for &key in keys {
-            let symbol = profile.positions[&key].symbol;
-            let mark_price = match last_price_cache.get(&symbol) {
+            let position = &profile.positions[&key];
+            let mark_price = match last_price_cache.get(&position.symbol) {
                 Some(r) => r.mark_price,
                 None => continue,
             };
-            if profile.positions[&key].estimate_unrealized_profit(mark_price) <= 0 {
+            if position.estimate_unrealized_profit(mark_price) <= 0 {
                 continue;
             }
-            profile.positions.get_mut(&key).unwrap().adl_eligibility = factor;
-            let snapshot = profile.positions[&key].clone();
-            result.entry(symbol).or_default().push(snapshot);
+            let mut snapshot = position.clone();
+            snapshot.adl_eligibility = factor;
+            out.push((snapshot.symbol, snapshot));
         }
     }
 }

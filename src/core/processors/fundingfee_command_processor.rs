@@ -10,6 +10,7 @@ use crate::core::common::position_direction::PositionDirection;
 use crate::core::common::position_mode::PositionMode;
 use crate::core::common::symbol_position_record::SymbolPositionRecord;
 use crate::core::common::symbol_type::SymbolType;
+use crate::core::common::user_profile::UserProfile;
 use crate::core::common::user_status::UserStatus;
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::twostep_command_processor::{TwoStepCommandProcessor, TwoStepContext};
@@ -26,6 +27,65 @@ fn sum_i64_checked<'a>(vals: impl Iterator<Item = &'a i64>) -> i64 {
 pub struct FundingPaymentAndRecvNotional {
     pub payer_amounts: BTreeMap<i64, i64>,
     pub receiver_notionals: BTreeMap<i64, i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FundingContribution {
+    uid: i64,
+    payer_fee: Option<i64>,
+    receiver_notional: Option<i64>,
+}
+
+fn user_funding_contribution(
+    user: &UserProfile,
+    symbol: i32,
+    mark_price: i64,
+    action: OrderAction,
+    rate: i64,
+    rate_scale_k: i64,
+) -> Option<FundingContribution> {
+    let mut payer_fee = None;
+    let mut receiver_notional = None;
+    let mut process = |position: &SymbolPositionRecord| {
+        if position.open_volume == 0 {
+            return;
+        }
+        let notional = mul_exact(position.open_volume, mark_price);
+        if position.direction.is_same_as_action(action) {
+            let fee = arithmetic::trunc_mul_div(notional, rate, rate_scale_k);
+            if fee > 0 {
+                payer_fee = Some(fee);
+            }
+        } else {
+            receiver_notional = Some(notional);
+        }
+    };
+    if let Some(position) = user.positions.get(&symbol) {
+        process(position);
+    }
+    if user.position_mode == PositionMode::Hedge {
+        if let Some(position) = user.positions.get(&-symbol) {
+            process(position);
+        }
+    }
+    if payer_fee.is_none() && receiver_notional.is_none() {
+        None
+    } else {
+        Some(FundingContribution { uid: user.uid, payer_fee, receiver_notional })
+    }
+}
+
+fn merge_funding_contributions(parts: impl Iterator<Item = FundingContribution>) -> FundingPaymentAndRecvNotional {
+    let mut shard = FundingPaymentAndRecvNotional::default();
+    for c in parts {
+        if let Some(fee) = c.payer_fee {
+            shard.payer_amounts.insert(c.uid, fee);
+        }
+        if let Some(notional) = c.receiver_notional {
+            shard.receiver_notionals.insert(c.uid, notional);
+        }
+    }
+    shard
 }
 
 pub struct FundingFeeCommandProcessor;
@@ -46,7 +106,14 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
         }
         let action = cmd.action.expect("SETTLE_FUNDINGFEES requires action");
         let symbol = spec.symbol_id;
-        let shard = Self::collect_input(ctx.ups, symbol, mark_price, action, cmd.price, cmd.size);
+        let rate = cmd.price;
+        let rate_scale_k = cmd.size;
+        let parts = self.map_users(
+            ctx,
+            |u| u.user_status == UserStatus::Active,
+            |u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k),
+        );
+        let shard = merge_funding_contributions(parts.into_iter().flatten());
         let events = Self::build_matcher_events(std::slice::from_ref(&shard));
         if let Some(&(_shard_id, amount)) = events.first() {
             cmd.funding_fee_event = Some((shard.payer_amounts, shard.receiver_notionals, amount));
@@ -105,46 +172,6 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
 }
 
 impl FundingFeeCommandProcessor {
-
-    fn collect_input(
-        ups: &UserProfileService,
-        symbol: i32,
-        mark_price: i64,
-        action: OrderAction,
-        rate: i64,
-        rate_scale_k: i64,
-    ) -> FundingPaymentAndRecvNotional {
-        let mut shard = FundingPaymentAndRecvNotional::default();
-        for user in ups.users.values() {
-            if user.user_status != UserStatus::Active {
-                continue;
-            }
-            let uid = user.uid;
-            let mut process = |position: &SymbolPositionRecord| {
-                if position.open_volume == 0 {
-                    return;
-                }
-                let notional = mul_exact(position.open_volume, mark_price);
-                if position.direction.is_same_as_action(action) {
-                    let fee = arithmetic::trunc_mul_div(notional, rate, rate_scale_k);
-                    if fee > 0 {
-                        shard.payer_amounts.insert(uid, fee);
-                    }
-                } else {
-                    shard.receiver_notionals.insert(uid, notional);
-                }
-            };
-            if let Some(position) = user.positions.get(&symbol) {
-                process(position);
-            }
-            if user.position_mode == PositionMode::Hedge {
-                if let Some(position) = user.positions.get(&-symbol) {
-                    process(position);
-                }
-            }
-        }
-        shard
-    }
 
     fn build_matcher_events(shards_data: &[FundingPaymentAndRecvNotional]) -> Vec<(usize, i64)> {
         let total_pay = sum_i64_checked(shards_data.iter().flat_map(|s| s.payer_amounts.values()));
@@ -290,11 +317,27 @@ mod tests {
         }
     }
 
+    fn shard(
+        ups: &UserProfileService,
+        symbol: i32,
+        mark_price: i64,
+        action: OrderAction,
+        rate: i64,
+        rate_scale_k: i64,
+    ) -> FundingPaymentAndRecvNotional {
+        let parts = ups
+            .users
+            .values()
+            .filter(|u| u.user_status == UserStatus::Active)
+            .filter_map(|u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k));
+        merge_funding_contributions(parts)
+    }
+
     #[test]
     fn collect_input_payer_side_computes_exact_fee_and_skips_zero_fee() {
         let mut ups = ups_with_user(1);
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.payer_amounts.get(&1), Some(&5));
         assert!(shard.receiver_notionals.is_empty());
     }
@@ -303,7 +346,7 @@ mod tests {
     fn collect_input_payer_side_skips_when_computed_fee_not_positive() {
         let mut ups = ups_with_user(1);
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 0, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 0, 1000);
         assert!(shard.payer_amounts.is_empty());
     }
 
@@ -311,7 +354,7 @@ mod tests {
     fn collect_input_receiver_side_records_raw_notional_not_fee() {
         let mut ups = ups_with_user(2);
         ups.get_mut(2).unwrap().positions.insert(SYMBOL, position(2, PositionDirection::Short, 100));
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.receiver_notionals.get(&2), Some(&1000));
         assert!(shard.payer_amounts.is_empty());
     }
@@ -325,7 +368,7 @@ mod tests {
         ups.get_mut(3).unwrap().positions.insert(SYMBOL, position(3, PositionDirection::Long, 100));
         ups.get_mut(3).unwrap().user_status = crate::core::common::user_status::UserStatus::Suspended;
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert!(shard.payer_amounts.is_empty());
         assert!(shard.receiver_notionals.is_empty());
     }
@@ -337,7 +380,7 @@ mod tests {
         ups.get_mut(1).unwrap().positions.insert(SYMBOL, position(1, PositionDirection::Long, 100));
         ups.get_mut(1).unwrap().positions.insert(-SYMBOL, position(1, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.payer_amounts.get(&1), Some(&5), "the long leg must go into the payer pool");
         assert_eq!(shard.receiver_notionals.get(&1), Some(&1000), "HEDGE short leg (-symbol) must be settled into the receiver pool");
     }
@@ -348,7 +391,7 @@ mod tests {
         ups.get_mut(2).unwrap().position_mode = PositionMode::Hedge;
         ups.get_mut(2).unwrap().positions.insert(-SYMBOL, position(2, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert_eq!(shard.receiver_notionals.get(&2), Some(&1000), "a lone short leg must also be settled");
         assert!(shard.payer_amounts.is_empty());
     }
@@ -358,7 +401,7 @@ mod tests {
         let mut ups = ups_with_user(3);
         ups.get_mut(3).unwrap().positions.insert(-SYMBOL, position(3, PositionDirection::Short, 100));
 
-        let shard = FundingFeeCommandProcessor::collect_input(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
+        let shard = shard(&ups, SYMBOL, 10, OrderAction::Bid, 5, 1000);
         assert!(shard.receiver_notionals.is_empty(), "ONEWAY must not read -symbol");
         assert!(shard.payer_amounts.is_empty());
     }

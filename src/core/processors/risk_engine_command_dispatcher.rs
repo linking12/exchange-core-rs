@@ -306,7 +306,7 @@ impl RiskEngineCommandDispatcher {
         engine.set_mark_price(cmd.symbol, cmd.price);
         engine.last_price_cache.entry(cmd.symbol).or_default().mark_price_ts = cmd.timestamp;
         let mut alerts = Vec::new();
-        engine.liquidation_engine.check_positions(cmd, ups, ssp, &engine.last_price_cache, &engine.loan_service, &mut alerts);
+        engine.liquidation_engine.check_positions(cmd, ups, ssp, &engine.last_price_cache, &engine.loan_service, &engine.compute_pool, &mut alerts);
         cmd.fund_events.append(&mut alerts);
         CommandResultCode::Success
     }

@@ -32,8 +32,15 @@ impl TwoStepCommandProcessor for AdlCommandProcessor {
             return CommandResultCode::Success;
         }
 
-        let mut candidates_map =
-            LiquidationService::compute_profitable_positions_by_symbol(ctx.ups, ctx.ssp, &ctx.risk.last_price_cache);
+        let per_user: Vec<Vec<(i32, SymbolPositionRecord)>> =
+            self.map_users(ctx, |_| true, |u| LiquidationService::user_profitable_positions(u, ctx.ssp, &ctx.risk.last_price_cache));
+
+        let mut candidates_map: BTreeMap<i32, Vec<SymbolPositionRecord>> = BTreeMap::new();
+        for user_candidates in per_user {
+            for (sym, candidate) in user_candidates {
+                candidates_map.entry(sym).or_default().push(candidate);
+            }
+        }
         let candidates = candidates_map.remove(&symbol).unwrap_or_default();
 
         let picks = Self::collect_input(candidates, action, bankruptcy_price, remaining_size);
@@ -105,8 +112,7 @@ impl AdlCommandProcessor {
 
         let mut scored: Vec<(i64, SymbolPositionRecord)> =
             filtered.into_iter().map(|pos| (LiquidationService::risk_score(&pos, bankruptcy_price), pos)).collect();
-        scored.sort_by(|a, b| a.0.cmp(&b.0));
-        scored.reverse();
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.uid.cmp(&a.1.uid)));
 
         let mut remaining = remaining_size;
         let mut out = Vec::new();

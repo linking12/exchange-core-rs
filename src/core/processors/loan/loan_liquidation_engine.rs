@@ -16,11 +16,18 @@ use crate::core::processors::liquidation::scheduler::covered_by_scan_slice;
 use crate::core::processors::loan::loan_service::{
     LoanService, BPS_SCALE, ORDERID_SUBTYPE_CROSS, ORDERID_SUBTYPE_ISOLATED,
 };
+use crate::core::processors::parallel::ComputePool;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
 use crate::core::processors::user_profile_service::UserProfileService;
 use crate::core::utils::core_arithmetic_utils::{add_exact, ceil_mul_div, mul_exact};
 
 const MS_PER_DAY: i64 = 86_400 * 1_000;
+
+#[derive(Debug, Default)]
+struct LoanLiquidationActions {
+    commands: Vec<OrderCommand>,
+    alerts: Vec<FundEvent>,
+}
 
 #[derive(Debug, Default)]
 pub struct LoanLiquidationEngine {
@@ -51,6 +58,7 @@ impl LoanLiquidationEngine {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn check_loans(
         &mut self,
         cmd: &OrderCommand,
@@ -59,60 +67,62 @@ impl LoanLiquidationEngine {
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
         fund_events: &mut Vec<FundEvent>,
+        pool: &ComputePool,
     ) {
-        if cmd.symbol >= 0 {
+        let uids: Vec<i64> = if cmd.symbol >= 0 {
             let spec = match ssp.get_symbol(cmd.symbol) {
                 Some(s) => s,
                 None => return,
             };
-            let mut uids: BTreeSet<i64> = BTreeSet::new();
+            let mut set: BTreeSet<i64> = BTreeSet::new();
             if let Some(iso) = self.isolated_loan_symbol_to_users.get(&spec.symbol_id) {
-                uids.extend(iso.iter().copied());
+                set.extend(iso.iter().copied());
             }
             if let Some(base) = self.cross_loan_currency_to_users.get(&spec.base_currency) {
-                uids.extend(base.iter().copied());
+                set.extend(base.iter().copied());
             }
             if let Some(quote) = self.cross_loan_currency_to_users.get(&spec.quote_currency) {
-                uids.extend(quote.iter().copied());
+                set.extend(quote.iter().copied());
             }
-            for uid in uids {
-                if let Some(up) = ups.get(uid) {
-                    self.check_user(up, cmd.timestamp, ssp, last_price_cache, loan_service, fund_events);
-                }
-            }
-            return;
-        }
-        for up in ups.users.values() {
-            if !covered_by_scan_slice(cmd, up.uid) {
-                continue;
-            }
-            self.check_user(up, cmd.timestamp, ssp, last_price_cache, loan_service, fund_events);
+            set.into_iter().collect()
+        } else {
+            ups.users.values().filter(|up| covered_by_scan_slice(cmd, up.uid)).map(|up| up.uid).collect()
+        };
+        let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| Self::decide_loan_liquidation(up, ssp, last_price_cache, loan_service, cmd.timestamp)));
+        for outcome in outcomes.into_iter().flatten() {
+            self.apply_loan_liquidation(outcome, fund_events);
         }
     }
 
-    fn check_user(
-        &mut self,
+    fn decide_loan_liquidation(
         up: &UserProfile,
-        ts: i64,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
-        fund_events: &mut Vec<FundEvent>,
-    ) {
+        ts: i64,
+    ) -> LoanLiquidationActions {
+        let mut outcome = LoanLiquidationActions::default();
         for loan in up.isolated_loans.values() {
-            self.check_isolated(loan, ts, ssp, last_price_cache, loan_service, fund_events);
+            Self::decide_isolated(loan, ts, ssp, last_price_cache, loan_service, &mut outcome);
         }
-        self.check_cross(up, ts, ssp, last_price_cache, loan_service, fund_events);
+        Self::decide_cross(up, ts, ssp, last_price_cache, loan_service, &mut outcome);
+        outcome
     }
 
-    fn check_isolated(
-        &mut self,
+    fn apply_loan_liquidation(&mut self, outcome: LoanLiquidationActions, fund_events: &mut Vec<FundEvent>) {
+        fund_events.extend(outcome.alerts);
+        for cmd in outcome.commands {
+            self.command_submitter.submit(cmd);
+        }
+    }
+
+    fn decide_isolated(
         loan: &IsolatedLoanRecord,
         ts: i64,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
-        fund_events: &mut Vec<FundEvent>,
+        outcome: &mut LoanLiquidationActions,
     ) {
         if loan.is_empty() {
             return;
@@ -154,7 +164,7 @@ impl LoanLiquidationEngine {
             let order_id = LoanService::force_sell_order_id(ORDERID_SUBTYPE_ISOLATED, loan.uid, loan.loan_id, ts);
 
             let limit_price = ceil_mul_div(mark_price, real_debt, collateral_value);
-            self.command_submitter.submit(OrderCommand {
+            outcome.commands.push(OrderCommand {
                 command: OrderCommandType::LoanForceLiquidate,
                 order_id,
                 uid: loan.uid,
@@ -170,7 +180,7 @@ impl LoanLiquidationEngine {
         } else if spec.loan_config.margin_call_ltv_bps > 0
             && ltv_scaled >= mul_exact(collateral_value, spec.loan_config.margin_call_ltv_bps as i64)
         {
-            fund_events.push(FundEvent {
+            outcome.alerts.push(FundEvent {
                 event_type: FundEventType::LoanMarginCall,
                 order_id: loan.loan_id,
                 uid: loan.uid,
@@ -184,14 +194,13 @@ impl LoanLiquidationEngine {
         }
     }
 
-    fn check_cross(
-        &mut self,
+    fn decide_cross(
         up: &UserProfile,
         ts: i64,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         loan_service: &LoanService,
-        fund_events: &mut Vec<FundEvent>,
+        outcome: &mut LoanLiquidationActions,
     ) {
         if up.cross_loans.is_empty() {
             return;
@@ -200,7 +209,7 @@ impl LoanLiquidationEngine {
         if ltv_bps < loan_service.global_config.cross_liquidation_ltv_bps as i64 {
             if ltv_bps >= loan_service.global_config.cross_margin_call_ltv_bps as i64 {
 
-                fund_events.push(FundEvent {
+                outcome.alerts.push(FundEvent {
                     event_type: FundEventType::LoanMarginCall,
                     uid: up.uid,
                     loan_mode: 1,
@@ -211,11 +220,11 @@ impl LoanLiquidationEngine {
             }
             return;
         }
-        let selling_currency = match self.pick_cross_collateral_to_sell(up, ssp, last_price_cache) {
+        let selling_currency = match Self::pick_cross_collateral_to_sell(up, ssp, last_price_cache) {
             Some(c) => c,
             None => return,
         };
-        let target_loan = match self.pick_cross_loan_to_repay(up, selling_currency, ssp, last_price_cache) {
+        let target_loan = match Self::pick_cross_loan_to_repay(up, selling_currency, ssp, last_price_cache) {
             Some(l) => l,
             None => return,
         };
@@ -249,7 +258,7 @@ impl LoanLiquidationEngine {
             return;
         }
         let order_id = LoanService::force_sell_order_id(ORDERID_SUBTYPE_CROSS, up.uid, target_loan.loan_id, ts);
-        self.command_submitter.submit(OrderCommand {
+        outcome.commands.push(OrderCommand {
             command: OrderCommandType::LoanCrossForceLiquidate,
             order_id,
             uid: up.uid,
@@ -308,7 +317,6 @@ impl LoanLiquidationEngine {
     }
 
     fn pick_cross_collateral_to_sell(
-        &self,
         up: &UserProfile,
         ssp: &SymbolSpecificationProvider,
         last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
@@ -345,7 +353,6 @@ impl LoanLiquidationEngine {
     }
 
     fn pick_cross_loan_to_repay(
-        &self,
         up: &UserProfile,
         selling_currency: i32,
         ssp: &SymbolSpecificationProvider,
@@ -520,7 +527,7 @@ mod tests {
         ups.users.insert(UID, up);
         let ls = LoanService::new();
         let cmd = OrderCommand { command: OrderCommandType::MarkpriceAdjustment, symbol: SYMBOL, timestamp: 5_000, ..Default::default() };
-        e.check_loans(&cmd, &ups, ssp, &price_cache(), &ls, &mut Vec::new());
+        e.check_loans(&cmd, &ups, ssp, &price_cache(), &ls, &mut Vec::new(), &ComputePool::default());
         let collected = out.borrow().clone();
         collected
     }
@@ -588,7 +595,7 @@ mod tests {
         ups.users.insert(UID, up);
         let ls = LoanService::new();
         let cmd = OrderCommand { command: OrderCommandType::MarkpriceAdjustment, symbol: SYMBOL, timestamp: 2 * MS_PER_DAY, ..Default::default() };
-        e.check_loans(&cmd, &ups, &ssp, &price_cache(), &ls, &mut Vec::new());
+        e.check_loans(&cmd, &ups, &ssp, &price_cache(), &ls, &mut Vec::new(), &ComputePool::default());
 
         assert_eq!(out.borrow().len(), 1, "LOCKED loan past term -> liquidated regardless of LTV");
     }
@@ -612,7 +619,6 @@ mod tests {
             pc.insert(1000 + c, LastPriceCacheRecord::with_mark(1));
         }
 
-        let e = LoanLiquidationEngine::new();
         let mut up = profile(UID);
         up.add_to_cross_loan_collateral(10, 1000);
         up.add_to_cross_loan_collateral(11, 500);
@@ -623,7 +629,7 @@ mod tests {
             l
         });
 
-        assert_eq!(e.pick_cross_collateral_to_sell(&up, &ssp, &pc), Some(11));
+        assert_eq!(LoanLiquidationEngine::pick_cross_collateral_to_sell(&up, &ssp, &pc), Some(11));
     }
 
     #[test]
@@ -640,7 +646,6 @@ mod tests {
         let mut pc = BTreeMap::new();
         pc.insert(1010, LastPriceCacheRecord::with_mark(1));
 
-        let e = LoanLiquidationEngine::new();
         let mut up = profile(UID);
         up.add_to_cross_loan_collateral(10, 1000);
         up.add_to_cross_loan_collateral(11, 5000);
@@ -651,7 +656,7 @@ mod tests {
         });
 
         assert_eq!(
-            e.pick_cross_collateral_to_sell(&up, &ssp, &pc),
+            LoanLiquidationEngine::pick_cross_collateral_to_sell(&up, &ssp, &pc),
             Some(10),
             "a higher-weight currency with no ready spot market is skipped, falling back to the next-best one that has a market"
         );
@@ -666,7 +671,6 @@ mod tests {
             s.add_symbol(spot_spec(8000, 7000, 0));
             s
         };
-        let e = LoanLiquidationEngine::new();
         let mut up = profile(UID);
         let mut l5 = CrossLoanRecord::new(UID, 5, SYMBOL, LOANC, 300, 0);
         l5.outstanding_principal = 200;
@@ -674,7 +678,7 @@ mod tests {
         l3.outstanding_principal = 200;
         up.cross_loans.insert(5, l5);
         up.cross_loans.insert(3, l3);
-        let pick = e.pick_cross_loan_to_repay(&up, COLL, &ssp, &price_cache()).expect("a repayable loan must exist");
+        let pick = LoanLiquidationEngine::pick_cross_loan_to_repay(&up, COLL, &ssp, &price_cache()).expect("a repayable loan must exist");
         assert_eq!(pick.loan_id, 3, "same rate, same principal -> tie-broken by loanId ASC");
     }
 
@@ -697,7 +701,7 @@ mod tests {
         ups.users.insert(UID_B, up_b);
         let ls = LoanService::new();
         let cmd = OrderCommand { command: OrderCommandType::MarkpriceAdjustment, symbol: SYMBOL, timestamp: 5_000, ..Default::default() };
-        e.check_loans(&cmd, &ups, &ssp, &price_cache(), &ls, &mut Vec::new());
+        e.check_loans(&cmd, &ups, &ssp, &price_cache(), &ls, &mut Vec::new(), &ComputePool::default());
 
         assert_eq!(out.borrow().len(), 1);
         assert_eq!(out.borrow()[0].uid, UID, "user A, present in the union, is detected and liquidated");
