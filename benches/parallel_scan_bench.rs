@@ -28,8 +28,10 @@ const RATE: i64 = 100;
 const RATE_SCALE_K: i64 = 1_000;
 const OPEN_VOLUME: i64 = 10;
 
-const TOTAL: usize = 20_000_000;
-const HOLDER_COUNTS: &[usize] = &[10_000, 100_000, 1_000_000];
+// TOTAL accounts = holders here, to match the Java bench's account count for a fair
+// funding comparison (the real system has far more idle accounts; with Rust's BTreeMap ups
+// that makes ups.get O(log total), which the 20M run showed).
+const HOLDER_COUNTS: &[usize] = &[1_000, 10_000, 100_000];
 
 fn futures_spec() -> CoreSymbolSpecification {
     CoreSymbolSpecification {
@@ -104,28 +106,31 @@ fn time_cmd(api: &mut ExchangeApi, make: fn() -> OrderCommand) -> f64 {
 }
 
 fn main() {
-    println!("single-command stall (blocks all other pipeline commands) at TOTAL={TOTAL} accounts");
-    println!("workers = ComputePool threads for the internal parallel scan (workers=2 ~ Java riskEnginesNum=2)\n");
-    println!("{:>12}  {:>8}  {:>18}  {:>20}", "holders", "workers", "funding stall ms", "liquidation stall ms");
+    // How long a single funding / liquidation command stalls the pipeline (blocking all other
+    // commands: matching, order placement) at a realistic 20M total accounts, by how many of
+    // them hold the settled/scanned symbol. workers=1 is the production default (serial single
+    // pipeline); workers=8 shows the ceiling with internal parallelism turned on.
+    const TOTAL: usize = 20_000_000;
+    let holders_list = [1_000usize, 10_000, 100_000, 1_000_000];
+    let worker_counts = [1usize, 4, 8];
+    println!("stall = time one command blocks the single pipeline; TOTAL={TOTAL} accounts\n");
+    println!("{:>10}  {:>8}  {:>18}  {:>20}", "holders", "workers", "funding stall ms", "liquidation stall ms");
 
-    let worker_counts = [1usize, 2, 4, 8];
-    for &holders in HOLDER_COUNTS {
+    for &holders in &holders_list {
         eprintln!("building total={TOTAL} holders={holders}...");
         let mut api = build(TOTAL, holders);
         for &w in &worker_counts {
-            // threshold 0 so workers>1 actually parallelize the scan regardless of holder count.
             api.core().risk.set_compute_config(ComputeConfig { workers: w, serial_threshold: 0 });
             let funding = time_cmd(&mut api, funding_cmd);
             let liq = time_cmd(&mut api, liquidation_cmd);
-            println!("{holders:>12}  {w:>8}  {funding:>18.2}  {liq:>20.2}");
+            println!("{holders:>10}  {w:>8}  {funding:>18.2}  {liq:>20.2}");
             std::io::stdout().flush().ok();
         }
         drop(api);
     }
 
     println!(
-        "\nStall scales with holders (index scan), not with TOTAL. Internal parallelism only\n\
-         compresses the scan/decide part; funding's merge + per-holder apply stay serial, so\n\
-         more workers help the large-holder case and are pure overhead for small ones."
+        "\nStall tracks holders, not total accounts. workers>1 only compresses the scan; the\n\
+         serial merge + per-holder apply dominate, so it barely helps."
     );
 }
