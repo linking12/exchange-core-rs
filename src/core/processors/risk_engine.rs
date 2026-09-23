@@ -1594,7 +1594,6 @@ impl RiskEngine {
         match mte.event_type {
             MatcherEventType::Trade => {
                 let pre_volume = up.positions.get(&position_key).unwrap().open_volume;
-                // 合成强平单从不 pendingHold，自身无 pending 可释放；不守卫会误扣共享 key 上真实挂单的 pending。
                 if !is_liquidation {
                     let pending_released = up.positions.get_mut(&position_key).unwrap().pending_release(action, mte.size);
                     if pending_released > 0 {
@@ -1655,10 +1654,8 @@ impl RiskEngine {
                 }
             }
             MatcherEventType::Reject | MatcherEventType::Reduce => {
-                // 同上守卫：强平单被拒/减时同样无 pending 可释放。
                 if !is_liquidation {
                     let released = up.positions.get_mut(&position_key).unwrap().pending_release(action, mte.size);
-                    // 与 TRADE 分支一致：仅在确有释放时才发 UnlockPending(避免零增量幻影通知)。
                     if released > 0 {
                         Self::push_futures_event(fund_events, last_price_cache, FundEventType::UnlockPending, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
                     }
