@@ -5,7 +5,6 @@ use crate::core::common::matcher_event_type::MatcherEventType;
 use crate::core::common::matcher_trade_event::MatcherTradeEvent;
 use crate::core::common::position_direction::PositionDirection;
 use crate::core::processors::liquidation::liquidation_service::LiquidationService;
-use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::twostep_command_processor::{TwoStepCommandProcessor, TwoStepContext};
 
 pub struct IfCommandProcessor;
@@ -38,7 +37,7 @@ impl TwoStepCommandProcessor for IfCommandProcessor {
 
             let up = ctx.ups.get_or_add_suspended(cmd.uid);
             let position_key = up.create_positions_key(symbol, action, cmd.command);
-            RiskEngine::close_and_settle_futures_position(
+            ctx.risk.close_and_settle_futures_position(
                 up,
                 position_key,
                 action.opposite(),
@@ -47,7 +46,6 @@ impl TwoStepCommandProcessor for IfCommandProcessor {
                 &spec,
                 &currency_spec,
                 &mut cmd.fund_events,
-                &ctx.risk.last_price_cache,
                 ctx.ssp,
                 FundEventType::IfPositionClose,
                 cmd.order_id,

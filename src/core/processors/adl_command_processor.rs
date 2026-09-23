@@ -7,7 +7,6 @@ use crate::core::common::cmd::order_command_type::OrderCommandType;
 use crate::core::common::core_currency_specification::CoreCurrencySpecification;
 use crate::core::common::core_symbol_specification::CoreSymbolSpecification;
 use crate::core::common::fund_event::{FundEvent, FundEventType};
-use crate::core::common::last_price_cache_record::LastPriceCacheRecord;
 use crate::core::common::order_action::OrderAction;
 use crate::core::common::symbol_position_record::SymbolPositionRecord;
 use crate::core::processors::liquidation::liquidation_service::LiquidationService;
@@ -79,15 +78,15 @@ impl TwoStepCommandProcessor for AdlCommandProcessor {
 
         for &(uid, exec_size) in &events {
             Self::apply_event(
-                ctx.ups, symbol, action, price, order_id, uid, exec_size, &spec, &currency_spec,
-                &mut cmd.fund_events, &ctx.risk.last_price_cache, ctx.ssp,
+                ctx.risk, ctx.ups, symbol, action, price, order_id, uid, exec_size, &spec, &currency_spec,
+                &mut cmd.fund_events, ctx.ssp,
             );
         }
 
         let adl_positions: Vec<AdlUserPosition> = std::mem::take(&mut cmd.adl_user_positions);
         Self::finalize_for_command(
-            ctx.ups, symbol, action, price, order_id, cmd.uid, cmd.size, !events.is_empty(), &adl_positions,
-            &spec, &currency_spec, &mut cmd.fund_events, &ctx.risk.last_price_cache, ctx.ssp,
+            ctx.risk, ctx.ups, symbol, action, price, order_id, cmd.uid, cmd.size, !events.is_empty(), &adl_positions,
+            &spec, &currency_spec, &mut cmd.fund_events, ctx.ssp,
         );
     }
 }
@@ -148,6 +147,7 @@ impl AdlCommandProcessor {
 
     #[allow(clippy::too_many_arguments)]
     fn apply_event(
+        risk: &mut RiskEngine,
         ups: &mut UserProfileService,
         symbol: i32,
         action: OrderAction,
@@ -158,7 +158,6 @@ impl AdlCommandProcessor {
         spec: &CoreSymbolSpecification,
         currency_spec: &CoreCurrencySpecification,
         fund_events: &mut Vec<FundEvent>,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         ssp: &SymbolSpecificationProvider,
     ) {
         let Some(up) = ups.users.get_mut(&uid) else {
@@ -168,14 +167,15 @@ impl AdlCommandProcessor {
         if !up.positions.contains_key(&position_key) {
             return;
         }
-        RiskEngine::close_and_settle_futures_position(
-            up, position_key, action, exec_size, price, spec, currency_spec, fund_events, last_price_cache, ssp,
+        risk.close_and_settle_futures_position(
+            up, position_key, action, exec_size, price, spec, currency_spec, fund_events, ssp,
             FundEventType::AdlPositionClose, order_id,
         );
     }
 
     #[allow(clippy::too_many_arguments)]
     fn finalize_for_command(
+        risk: &mut RiskEngine,
         ups: &mut UserProfileService,
         symbol: i32,
         action: OrderAction,
@@ -188,16 +188,15 @@ impl AdlCommandProcessor {
         spec: &CoreSymbolSpecification,
         currency_spec: &CoreCurrencySpecification,
         fund_events: &mut Vec<FundEvent>,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         ssp: &SymbolSpecificationProvider,
     ) {
         if had_events {
             let up = ups.get_or_add_suspended(taker_uid);
             let taker_key = up.create_positions_key(symbol, action, OrderCommandType::AutoDeleveraging);
             if up.positions.contains_key(&taker_key) {
-                RiskEngine::close_and_settle_futures_position(
+                risk.close_and_settle_futures_position(
                     up, taker_key, action.opposite(), taker_size, price, spec, currency_spec, fund_events,
-                    last_price_cache, ssp, FundEventType::AdlOriginClose, order_id,
+                    ssp, FundEventType::AdlOriginClose, order_id,
                 );
             }
         }

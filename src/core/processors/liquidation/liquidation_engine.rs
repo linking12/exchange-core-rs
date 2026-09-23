@@ -67,6 +67,26 @@ impl LiquidationEngine {
         self.symbol_to_users.entry(symbol).or_default().insert(uid);
     }
 
+    pub fn rebuild_indices(&mut self, ups: &UserProfileService, ssp: &SymbolSpecificationProvider) {
+        for up in ups.users.values() {
+            for pos in up.positions.values() {
+                if pos.open_volume == 0 {
+                    continue;
+                }
+                if let Some(spec) = ssp.get_symbol(pos.symbol) {
+                    if spec.symbol_type.is_futures_contract() {
+                        self.on_position_opened(up.uid, pos.symbol);
+                    }
+                }
+            }
+        }
+        self.loan_liquidation_engine.rebuild_indices(ups);
+    }
+
+    pub fn users_holding_symbol(&self, symbol: i32) -> Option<&BTreeSet<i64>> {
+        self.symbol_to_users.get(&symbol)
+    }
+
     pub fn on_position_closed(&mut self, profile: &UserProfile, symbol: i32, closed_key: i32) {
         let holds_other = profile.positions.iter().any(|(&k, p)| k != closed_key && p.symbol == symbol);
         if holds_other {
@@ -108,16 +128,6 @@ impl LiquidationEngine {
             self.apply_user_liquidation(uid, outcome, ups, ssp, last_price_cache, cmd.timestamp, fund_events);
         }
 
-        if targeted {
-            if let Some(holders) = self.symbol_to_users.get_mut(&cmd.symbol) {
-                holders.retain(|uid| {
-                    ups.get(*uid).is_some_and(|u| u.positions.values().any(|p| p.symbol == cmd.symbol))
-                });
-                if holders.is_empty() {
-                    self.symbol_to_users.remove(&cmd.symbol);
-                }
-            }
-        }
         self.loan_liquidation_engine.check_loans(cmd, ups, ssp, last_price_cache, loan_service, fund_events, pool);
     }
 

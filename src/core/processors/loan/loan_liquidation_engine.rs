@@ -290,6 +290,25 @@ impl LoanLiquidationEngine {
         }
     }
 
+    pub fn reconcile_user(&mut self, up: &UserProfile) {
+        let uid = up.uid;
+        for loan in up.isolated_loans.values() {
+            if !loan.is_empty() {
+                self.on_isolated_loan_opened(uid, loan.symbol_id);
+            }
+        }
+        let indexed: Vec<i32> = self
+            .isolated_loan_symbol_to_users
+            .iter()
+            .filter(|(_, users)| users.contains(&uid))
+            .map(|(&s, _)| s)
+            .collect();
+        for sym in indexed {
+            self.on_isolated_loan_closed(up, sym);
+        }
+        self.sync_cross_exposure(up);
+    }
+
     pub fn sync_cross_exposure(&mut self, up: &UserProfile) {
         for (&currency, &amount) in up.cross_loan_collateral.iter() {
             if amount > 0 {

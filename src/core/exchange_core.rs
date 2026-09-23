@@ -205,20 +205,7 @@ impl ExchangeCore {
                 pos.liquidation_flow = None;
             }
         }
-        let le = &mut self.risk.liquidation_engine;
-        for up in self.ups.users.values() {
-            for pos in up.positions.values() {
-                if pos.open_volume == 0 {
-                    continue;
-                }
-                if let Some(spec) = self.ssp.get_symbol(pos.symbol) {
-                    if spec.symbol_type.is_futures_contract() {
-                        le.on_position_opened(up.uid, pos.symbol);
-                    }
-                }
-            }
-        }
-        le.loan_liquidation_engine.rebuild_indices(&self.ups);
+        self.risk.liquidation_engine.rebuild_indices(&self.ups, &self.ssp);
     }
 }
 

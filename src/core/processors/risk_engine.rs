@@ -140,9 +140,7 @@ impl RiskEngine {
             let mut ctx = TwoStepContext::new(self, ups, ssp);
             cmd.result_code = Some(AdlCommandProcessor.collect(&mut ctx, cmd));
         } else if cmd.command == OrderCommandType::LiquidationScan {
-            let mut _alerts = Vec::new();
-            self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &self.compute_pool, &mut _alerts);
-            cmd.fund_events.append(&mut _alerts);
+            self.check_liquidations(cmd, ups, ssp);
             cmd.result_code = Some(CommandResultCode::Success);
         }
     }
@@ -244,9 +242,7 @@ impl RiskEngine {
                 FundingFeeCommandProcessor.apply(&mut ctx, cmd);
             }
             if had_funding_event {
-                let mut _alerts = Vec::new();
-                self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &self.compute_pool, &mut _alerts);
-                cmd.fund_events.append(&mut _alerts);
+                self.check_liquidations(cmd, ups, ssp);
             }
             return;
         }
@@ -270,8 +266,6 @@ impl RiskEngine {
             return;
         }
         let mark_price_for_futures = self.mark_price(cmd.symbol).unwrap_or(0);
-        let fees = &mut self.fees;
-        let last_price_cache = &self.last_price_cache;
 
         let mte_owned = cmd.matcher_event.take();
         let mte = match mte_owned.as_deref() {
@@ -315,16 +309,15 @@ impl RiskEngine {
             let cmd_order_id = cmd.order_id;
             let fund_events = &mut cmd.fund_events;
             Self::handle_matcher_event_margin(
+                self,
                 cmd_uid,
                 cmd_command,
                 fund_events,
                 ssp,
-                last_price_cache,
                 mte,
                 &spec,
                 taker_action,
                 ups,
-                fees,
                 &quote_currency_spec,
                 mark_price_for_futures,
                 is_force,
@@ -358,7 +351,7 @@ impl RiskEngine {
                     if let Some(taker) = ups.get(liq_fee_uid) {
                         match taker.positions.values().find(|p| p.symbol == liq_fee_symbol && p.open_volume != 0) {
                             Some(pos) => Self::push_futures_event(
-                                &mut cmd.fund_events, last_price_cache, FundEventType::LiquidationFee, liq_fee_order_id, pos, &spec, taker, ssp,
+                                &mut cmd.fund_events, &self.last_price_cache, FundEventType::LiquidationFee, liq_fee_order_id, pos, &spec, taker, ssp,
                             ),
                             None => {
                                 let ev = Self::spot_snapshot_event(
@@ -448,6 +441,7 @@ impl RiskEngine {
                 })
                 .clone();
             let mut spot_events = Vec::new();
+            let fees = &mut self.fees;
             if taker_sell {
                 Self::handle_matcher_events_exchange_sell(
                     cmd,
@@ -1458,16 +1452,15 @@ impl RiskEngine {
 
     #[allow(clippy::too_many_arguments)]
     fn handle_matcher_event_margin(
+        risk: &mut RiskEngine,
         cmd_uid: i64,
         cmd_command: OrderCommandType,
         fund_events: &mut Vec<FundEvent>,
         ssp: &SymbolSpecificationProvider,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         first_mte: &MatcherTradeEvent,
         spec: &CoreSymbolSpecification,
         taker_action: OrderAction,
         ups: &mut UserProfileService,
-        fees: &mut BTreeMap<i32, i64>,
         quote_currency_spec: &CoreCurrencySpecification,
         mark_price: i64,
         is_liquidation: bool,
@@ -1476,16 +1469,15 @@ impl RiskEngine {
         let mut node = Some(first_mte);
         while let Some(ev) = node {
             Self::handle_matcher_event_margin_one(
+                risk,
                 cmd_uid,
                 cmd_command,
                 fund_events,
                 ssp,
-                last_price_cache,
                 ev,
                 spec,
                 taker_action,
                 ups,
-                fees,
                 quote_currency_spec,
                 mark_price,
                 is_liquidation,
@@ -1497,16 +1489,15 @@ impl RiskEngine {
 
     #[allow(clippy::too_many_arguments)]
     fn handle_matcher_event_margin_one(
+        risk: &mut RiskEngine,
         cmd_uid: i64,
         cmd_command: OrderCommandType,
         fund_events: &mut Vec<FundEvent>,
         ssp: &SymbolSpecificationProvider,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         mte: &MatcherTradeEvent,
         spec: &CoreSymbolSpecification,
         taker_action: OrderAction,
         ups: &mut UserProfileService,
-        fees: &mut BTreeMap<i32, i64>,
         quote_currency_spec: &CoreCurrencySpecification,
         mark_price: i64,
         is_liquidation: bool,
@@ -1516,16 +1507,15 @@ impl RiskEngine {
             let taker_up = ups.get_or_add_suspended(cmd_uid);
             let position_key = taker_up.create_positions_key(spec.symbol_id, taker_action, cmd_command);
             Self::settle_margin_position_event(
+                risk,
                 fund_events,
                 ssp,
-                last_price_cache,
                 taker_up,
                 position_key,
                  false,
                 mte,
                 spec,
                 taker_action,
-                fees,
                 quote_currency_spec,
                 mark_price,
                  true,
@@ -1540,16 +1530,15 @@ impl RiskEngine {
             let position_key =
                 maker_up.create_positions_key(spec.symbol_id, maker_action, mte.matched_order_command_type);
             Self::settle_margin_position_event(
+                risk,
                 fund_events,
                 ssp,
-                last_price_cache,
                 maker_up,
                 position_key,
                  true,
                 mte,
                 spec,
                 maker_action,
-                fees,
                 quote_currency_spec,
                 mark_price,
                  false,
@@ -1561,22 +1550,22 @@ impl RiskEngine {
 
     #[allow(clippy::too_many_arguments)]
     fn settle_margin_position_event(
+        risk: &mut RiskEngine,
         fund_events: &mut Vec<FundEvent>,
         ssp: &SymbolSpecificationProvider,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         up: &mut UserProfile,
         position_key: i32,
         required: bool,
         mte: &MatcherTradeEvent,
         spec: &CoreSymbolSpecification,
         action: OrderAction,
-        fees: &mut BTreeMap<i32, i64>,
         quote_currency_spec: &CoreCurrencySpecification,
         mark_price: i64,
         is_taker: bool,
         is_liquidation: bool,
         cmd_order_id: i64,
     ) {
+        let last_price_cache = &risk.last_price_cache;
         let event_order_id = if is_taker { cmd_order_id } else { mte.maker_order_id };
         if !up.positions.contains_key(&position_key) {
             if required {
@@ -1621,7 +1610,7 @@ impl RiskEngine {
                         quote_currency_spec.currency_scale_k,
                     );
                     up.add_to_account(quote_currency, -fee);
-                    *fees.entry(quote_currency).or_insert(0) += fee;
+                    *risk.fees.entry(quote_currency).or_insert(0) += fee;
 
                     let close_type = if is_liquidation { FundEventType::LiquidationClose } else { FundEventType::ClosePosition };
                     Self::push_futures_event(fund_events, last_price_cache, close_type, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
@@ -1648,7 +1637,7 @@ impl RiskEngine {
                         quote_currency_spec.currency_scale_k,
                     );
                     up.add_to_account(quote_currency, -fee);
-                    *fees.entry(quote_currency).or_insert(0) += fee;
+                    *risk.fees.entry(quote_currency).or_insert(0) += fee;
 
                     Self::push_futures_event(fund_events, last_price_cache, FundEventType::OpenPosition, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
                 }
@@ -1694,7 +1683,7 @@ impl RiskEngine {
                 Self::push_futures_event(fund_events, last_price_cache, FundEventType::PnlSettlement, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
             }
 
-            up.positions.remove(&position_key);
+            risk.remove_position_record(up, position_key, spec.symbol_id);
         }
     }
 
@@ -1763,8 +1752,21 @@ impl RiskEngine {
         });
     }
 
+    pub(crate) fn remove_position_record(&mut self, up: &mut UserProfile, position_key: i32, symbol: i32) {
+        self.liquidation_engine.on_position_closed(up, symbol, position_key);
+        up.positions.remove(&position_key);
+    }
+
+    pub(crate) fn check_liquidations(&mut self, cmd: &mut OrderCommand, ups: &mut UserProfileService, ssp: &SymbolSpecificationProvider) {
+        let mut alerts = Vec::new();
+        self.liquidation_engine.check_positions(cmd, ups, ssp, &self.last_price_cache, &self.loan_service, &self.compute_pool, &mut alerts);
+        cmd.fund_events.append(&mut alerts);
+    }
+
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn close_and_settle_futures_position(
+        &mut self,
         up: &mut UserProfile,
         position_key: i32,
         close_action: OrderAction,
@@ -1773,7 +1775,6 @@ impl RiskEngine {
         spec: &CoreSymbolSpecification,
         currency_spec: &CoreCurrencySpecification,
         fund_events: &mut Vec<FundEvent>,
-        last_price_cache: &BTreeMap<i32, LastPriceCacheRecord>,
         ssp: &SymbolSpecificationProvider,
         close_event_type: FundEventType,
         order_id: i64,
@@ -1783,7 +1784,7 @@ impl RiskEngine {
         }
         up.positions.get_mut(&position_key).unwrap().close_current_position_futures(close_action, size, price);
 
-        Self::push_futures_event(fund_events, last_price_cache, close_event_type, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+        Self::push_futures_event(fund_events, &self.last_price_cache, close_event_type, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
 
         let is_empty = up.positions.get(&position_key).map(|p| p.is_empty()).unwrap_or(false);
         if !is_empty {
@@ -1800,7 +1801,7 @@ impl RiskEngine {
                 currency_spec.currency_scale_k,
             );
             up.add_to_account(currency, refund);
-            Self::push_futures_event(fund_events, last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+            Self::push_futures_event(fund_events, &self.last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
             up.positions.get_mut(&position_key).unwrap().extra_margin = 0;
         }
 
@@ -1813,9 +1814,9 @@ impl RiskEngine {
                 currency_spec.currency_scale_k,
             );
             up.add_to_account(currency, profit_scaled);
-            Self::push_futures_event(fund_events, last_price_cache, FundEventType::PnlSettlement, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
+            Self::push_futures_event(fund_events, &self.last_price_cache, FundEventType::PnlSettlement, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
         }
-        up.positions.remove(&position_key);
+        self.remove_position_record(up, position_key, spec.symbol_id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3664,12 +3665,12 @@ mod tests {
             pos.pending_buy_avg_price = 100;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(10, 100, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &currency_spec, 100, true, false, 0,
         );
 
         let pos = up.positions.get(&FUT_SYMBOL).expect("open 后仍非空（open_volume>0），不应被拆记录");
@@ -3680,8 +3681,8 @@ mod tests {
         assert_eq!(pos.profit, 0, "开仓不产生已实现盈亏");
 
         assert_eq!(up.account(FUT_QUOTE), 10_000 - 20);
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), 20);
-        assert_eq!((up.account(FUT_QUOTE) - 10_000) + *fees.get(&FUT_QUOTE).unwrap(), 0, "唯一移动是费用配对");
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), 20);
+        assert_eq!((up.account(FUT_QUOTE) - 10_000) + *engine.fees.get(&FUT_QUOTE).unwrap(), 0, "唯一移动是费用配对");
     }
 
     #[test]
@@ -3700,12 +3701,12 @@ mod tests {
             pos.open_init_margin_sum = 2000;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(5, 110, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &currency_spec, 100, true, false, 0,
         );
 
         let pos = up.positions.get(&FUT_SYMBOL).expect("部分平仍非空，不应拆记录");
@@ -3715,7 +3716,7 @@ mod tests {
         assert_eq!(pos.profit, 0, "部分平不实现盈亏");
 
         assert_eq!(up.account(FUT_QUOTE), 10_000 - 10);
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), 10);
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), 10);
     }
 
     #[test]
@@ -3734,17 +3735,17 @@ mod tests {
             pos.open_init_margin_sum = 1000;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(10, 120, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &currency_spec, 100, true, false, 0,
         );
 
         assert!(!up.positions.contains_key(&FUT_SYMBOL), "全平且无残余挂单 → isEmpty → 拆记录");
         assert_eq!(up.account(FUT_QUOTE), 10_000 - 20 + 200);
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), 20);
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), 20);
     }
 
     #[test]
@@ -3763,12 +3764,12 @@ mod tests {
             pos.open_init_margin_sum = 1000;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(15, 120, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &currency_spec, 100, true, false, 0,
         );
 
         let pos = up.positions.get(&FUT_SYMBOL).expect("翻仓后新方向仓位非空，不拆记录");
@@ -3779,7 +3780,7 @@ mod tests {
         assert_eq!(pos.profit, 200, "平仓腿已实现盈亏累进 profit，但因新仓非空未结算入账户");
 
         assert_eq!(up.account(FUT_QUOTE), 10_000 - 30);
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), 30);
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), 30);
     }
 
     #[test]
@@ -3796,18 +3797,18 @@ mod tests {
             pos.pending_buy_avg_price = 100;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_reject_reduce_event(MatcherEventType::Reject, 4);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &currency_spec, 100, true, false, 0,
         );
 
         let pos = up.positions.get(&FUT_SYMBOL).unwrap();
         assert_eq!(pos.pending_buy_size, 6);
         assert_eq!(up.account(FUT_QUOTE), 5_000, "REJECT/REDUCE 只退 pending，不动账户");
-        assert!(fees.is_empty());
+        assert!(engine.fees.is_empty());
     }
 
     #[test]
@@ -3825,17 +3826,17 @@ mod tests {
             pos.extra_margin = 30;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_reject_reduce_event(MatcherEventType::Reduce, 3);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Ask, &currency_spec, 100, true, false, 0,
         );
 
         assert!(!up.positions.contains_key(&FUT_SYMBOL), "isEmpty 后应拆记录");
         assert_eq!(up.account(FUT_QUOTE), 1_000 + 30 + 50, "extraMargin(30) + profit(50) 一次性入账");
-        assert!(fees.is_empty(), "本次无成交，无 fee 移动");
+        assert!(engine.fees.is_empty(), "本次无成交，无 fee 移动");
     }
 
     #[test]
@@ -3844,17 +3845,17 @@ mod tests {
         let currency_spec = fut_currency_spec();
         let mut ups = UserProfileService::new();
         assert_eq!(ups.add_empty_user_profile(UID), CommandResultCode::Success);
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(10, 100, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &currency_spec, 100, true, false, 0,
         );
 
         assert!(!up.positions.contains_key(&FUT_SYMBOL), "缺失 position 时 required=false 应静默跳过");
         assert_eq!(up.account(FUT_QUOTE), 0);
-        assert!(fees.is_empty());
+        assert!(engine.fees.is_empty());
     }
 
     #[test]
@@ -3864,12 +3865,12 @@ mod tests {
         let currency_spec = fut_currency_spec();
         let mut ups = UserProfileService::new();
         assert_eq!(ups.add_empty_user_profile(UID), CommandResultCode::Success);
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(10, 100, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, true, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100, false, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, true, &mte, &spec, OrderAction::Bid, &currency_spec, 100, false, false, 0,
         );
     }
 
@@ -3887,19 +3888,19 @@ mod tests {
             pos.pending_buy_avg_price = 100;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(10, 100, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &currency_spec, 100,
             false,
             false,
             0,
         );
 
         assert_eq!(up.account(FUT_QUOTE), 10_000 - 30);
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), 30);
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), 30);
     }
 
     #[test]
@@ -3916,18 +3917,18 @@ mod tests {
             pos.pending_buy_avg_price = 101;
             up.positions.insert(FUT_SYMBOL, pos);
         }
-        let mut fees: BTreeMap<i32, i64> = BTreeMap::new();
+        let mut engine = RiskEngine::new();
         let mte = fut_trade_event(7, 101, 0);
 
         let up = ups.get_mut(UID).unwrap();
-        RiskEngine::settle_margin_position_event(&mut Vec::new(), &SymbolSpecificationProvider::new(), &std::collections::BTreeMap::new(),
-            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &mut fees, &currency_spec, 100, true, false, 0,
+        RiskEngine::settle_margin_position_event(&mut engine, &mut Vec::new(), &SymbolSpecificationProvider::new(),
+            up, FUT_SYMBOL, false, &mte, &spec, OrderAction::Bid, &currency_spec, 100, true, false, 0,
         );
         let taker_fee = arithmetic::calculate_taker_fee(7, 101, 333, 10_000);
         assert_ne!(taker_fee, 0);
         assert_eq!(up.account(FUT_QUOTE), 100_000 - taker_fee, "借记的就是算出来的那一个值，逐位精确");
-        assert_eq!(*fees.get(&FUT_QUOTE).unwrap(), taker_fee, "贷记的也是同一个值，精确配对");
-        assert_eq!((up.account(FUT_QUOTE) - 100_000) + *fees.get(&FUT_QUOTE).unwrap(), 0, "EXACT 守恒，非近似");
+        assert_eq!(*engine.fees.get(&FUT_QUOTE).unwrap(), taker_fee, "贷记的也是同一个值，精确配对");
+        assert_eq!((up.account(FUT_QUOTE) - 100_000) + *engine.fees.get(&FUT_QUOTE).unwrap(), 0, "EXACT 守恒，非近似");
     }
 
     #[test]
@@ -5687,20 +5688,20 @@ mod tests {
         }
 
         #[test]
-        fn funding_prunes_closed_position_ghost_from_index_keeps_holders() {
-            let (mut engine, mut ups, ssp) = setup_with_payer_and_receiver(10, 100, 100);
-            // A ghost: registered in the index but its position was fully closed (no record).
-            let ghost = 999i64;
-            assert_eq!(ups.add_empty_user_profile(ghost), CommandResultCode::Success);
-            engine.liquidation_engine.on_position_opened(ghost, FUT_SYMBOL);
-            assert!(engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap().contains(&ghost));
+        fn remove_position_record_prunes_closing_holder_and_keeps_others() {
+            let (mut engine, mut ups, _ssp) = setup_with_payer_and_receiver(10, 100, 100);
+            assert!(engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap().contains(&PAYER_UID));
 
-            let mut cmd = funding_cmd(OrderAction::Bid, 5, 1000);
-            run_full_pipeline(&mut engine, &mut cmd, &mut ups, &ssp);
+            let up = ups.get_mut(PAYER_UID).unwrap();
+            engine.remove_position_record(up, FUT_SYMBOL, FUT_SYMBOL);
 
-            let holders = engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).unwrap();
-            assert!(!holders.contains(&ghost), "ghost with no position must be pruned by the funding scan");
-            assert!(holders.contains(&PAYER_UID) && holders.contains(&RECEIVER_UID), "real holders must be kept");
+            assert!(!ups.get(PAYER_UID).unwrap().positions.contains_key(&FUT_SYMBOL), "closed position removed from profile");
+            let holders = engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL);
+            assert!(holders.is_none_or(|h| !h.contains(&PAYER_UID)), "closing holder pruned from index");
+            assert!(
+                engine.liquidation_engine.symbol_to_users.get(&FUT_SYMBOL).is_some_and(|h| h.contains(&RECEIVER_UID)),
+                "the other real holder is kept",
+            );
         }
     }
 

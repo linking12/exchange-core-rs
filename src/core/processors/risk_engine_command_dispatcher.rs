@@ -305,9 +305,7 @@ impl RiskEngineCommandDispatcher {
         }
         engine.set_mark_price(cmd.symbol, cmd.price);
         engine.last_price_cache.entry(cmd.symbol).or_default().mark_price_ts = cmd.timestamp;
-        let mut alerts = Vec::new();
-        engine.liquidation_engine.check_positions(cmd, ups, ssp, &engine.last_price_cache, &engine.loan_service, &engine.compute_pool, &mut alerts);
-        cmd.fund_events.append(&mut alerts);
+        engine.check_liquidations(cmd, ups, ssp);
         CommandResultCode::Success
     }
 
@@ -364,7 +362,7 @@ impl RiskEngineCommandDispatcher {
                     up.add_to_account(currency, profit_scaled);
                 }
                 RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::PnlSettlement, order_id, up.positions.get(&key).unwrap(), &spec, up, ssp);
-                up.positions.remove(&key);
+                engine.remove_position_record(up, key, spec.symbol_id);
             }
         }
         CommandResultCode::Success

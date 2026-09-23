@@ -462,7 +462,6 @@ impl LoanCommandDispatcher {
         if lif_takeover || (principal == 0 && interest == 0 && collateral == 0) {
             taker_up.isolated_loans.remove(&loan_id);
         }
-        engine.liquidation_engine.loan_liquidation_engine.on_isolated_loan_closed(taker_up, spec.symbol_id);
     }
 
     fn handle_loan_cross_add_collateral(
@@ -777,7 +776,6 @@ impl LoanCommandDispatcher {
         if all_collateral_exhausted {
             Self::take_over_remaining_cross_loans(engine, cmd, taker_up, cmd.timestamp, target_loan_id, selling_currency, ssp);
         }
-        engine.liquidation_engine.loan_liquidation_engine.sync_cross_exposure(taker_up);
     }
 
     fn handle_pool_deposit(engine: &mut RiskEngine, cmd: &OrderCommand) -> CommandResultCode {
@@ -827,22 +825,7 @@ impl LoanCommandDispatcher {
             Some(u) => u,
             None => return,
         };
-        let lle = &mut engine.liquidation_engine.loan_liquidation_engine;
-        for loan in up.isolated_loans.values() {
-            if !loan.is_empty() {
-                lle.on_isolated_loan_opened(uid, loan.symbol_id);
-            }
-        }
-        let indexed: Vec<i32> = lle
-            .isolated_loan_symbol_to_users
-            .iter()
-            .filter(|(_, users)| users.contains(&uid))
-            .map(|(&s, _)| s)
-            .collect();
-        for sym in indexed {
-            lle.on_isolated_loan_closed(up, sym);
-        }
-        lle.sync_cross_exposure(up);
+        engine.liquidation_engine.loan_liquidation_engine.reconcile_user(up);
     }
 
     fn preamble<'a>(
