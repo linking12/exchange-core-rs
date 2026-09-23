@@ -463,6 +463,7 @@ fn replay(stream: &str) -> (ExchangeApi, Vec<String>, Vec<String>, Vec<String>) 
     let mut fund_lines = fund_sink.borrow().clone();
     fund_lines.sort();
     let match_lines = match_sink.borrow().clone();
+    api.core().verify_index_consistency();
     (api, results, fund_lines, match_lines)
 }
 

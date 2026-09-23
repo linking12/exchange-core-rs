@@ -494,6 +494,7 @@ impl RiskEngine {
                 }
                 _ => unreachable!("is_loan_force_liquidate implies one of the two force-liquidate codes"),
             }
+            LoanCommandDispatcher::reconcile_loan_indices(self, ups, cmd.uid);
         }
 
         cmd.matcher_event = mte_owned;

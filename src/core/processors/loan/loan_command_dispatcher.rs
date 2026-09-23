@@ -820,7 +820,7 @@ impl LoanCommandDispatcher {
         CommandResultCode::Success
     }
 
-    fn reconcile_loan_indices(engine: &mut RiskEngine, ups: &UserProfileService, uid: i64) {
+    pub(crate) fn reconcile_loan_indices(engine: &mut RiskEngine, ups: &UserProfileService, uid: i64) {
         let up = match ups.get(uid) {
             Some(u) => u,
             None => return,
