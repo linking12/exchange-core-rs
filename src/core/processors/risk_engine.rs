@@ -47,11 +47,6 @@ pub struct RiskEngine {
     pub liquidation_service: LiquidationService,
     pub liquidation_engine: LiquidationEngine,
     pub(crate) binary_cmd: BinaryCommandsProcessor,
-    // 非复制态:不进快照。new()/recover() 后按本节点配置存在。
-    // pub(crate) (not private): sibling modules (e.g. risk_engine_command_dispatcher) need to
-    // borrow this as a disjoint field alongside `&mut engine.liquidation_engine` in the same
-    // call expression; going through the `compute_pool()` accessor would borrow all of `*engine`
-    // immutably and conflict with that `&mut` — see liquidation task-3.1 report.
     pub(crate) compute_pool: ComputePool,
 }
 
