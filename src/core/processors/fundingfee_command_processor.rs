@@ -108,11 +108,20 @@ impl TwoStepCommandProcessor for FundingFeeCommandProcessor {
         let symbol = spec.symbol_id;
         let rate = cmd.price;
         let rate_scale_k = cmd.size;
-        let parts = self.map_users(
-            ctx,
-            |u| u.user_status == UserStatus::Active,
-            |u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k),
-        );
+        let profiles: Vec<&UserProfile> = ctx
+            .risk
+            .liquidation_engine
+            .symbol_to_users
+            .get(&symbol)
+            .into_iter()
+            .flatten()
+            .filter_map(|&uid| ctx.ups.get(uid))
+            .filter(|u| u.user_status == UserStatus::Active)
+            .collect();
+        let parts = ctx
+            .risk
+            .compute_pool()
+            .map(&profiles, |u| user_funding_contribution(u, symbol, mark_price, action, rate, rate_scale_k));
         let shard = merge_funding_contributions(parts.into_iter().flatten());
         let events = Self::build_matcher_events(std::slice::from_ref(&shard));
         if let Some(&(_shard_id, amount)) = events.first() {

@@ -5591,7 +5591,7 @@ mod tests {
             payer_volume: i64,
             receiver_volume: i64,
         ) -> (RiskEngine, UserProfileService, SymbolSpecificationProvider) {
-            let (engine, mut ups, ssp) = setup_futures(0, 0, 0, mark_price);
+            let (mut engine, mut ups, ssp) = setup_futures(0, 0, 0, mark_price);
             ups.users.clear();
             assert_eq!(ups.add_empty_user_profile(PAYER_UID), CommandResultCode::Success);
             assert_eq!(ups.add_empty_user_profile(RECEIVER_UID), CommandResultCode::Success);
@@ -5611,6 +5611,8 @@ mod tests {
                     ..SymbolPositionRecord::new(RECEIVER_UID, FUT_SYMBOL, FUT_QUOTE, MarginMode::Isolated, 1)
                 },
             );
+            engine.liquidation_engine.on_position_opened(PAYER_UID, FUT_SYMBOL);
+            engine.liquidation_engine.on_position_opened(RECEIVER_UID, FUT_SYMBOL);
             (engine, ups, ssp)
         }
 
