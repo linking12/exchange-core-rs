@@ -6,7 +6,7 @@ pub struct ComputeConfig {
 
 impl Default for ComputeConfig {
     fn default() -> Self {
-        Self { workers: 1, serial_threshold: 1024 }
+        Self { workers: 4, serial_threshold: 1024 }
     }
 }
 

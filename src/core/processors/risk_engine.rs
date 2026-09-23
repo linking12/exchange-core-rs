@@ -6141,14 +6141,14 @@ mod tests {
         }
 
         #[test]
-        fn risk_engine_default_compute_pool_is_serial() {
+        fn risk_engine_default_compute_pool_is_parallel_4() {
             use crate::core::processors::parallel::ComputeConfig;
             let re = RiskEngine::new();
-            assert_eq!(re.compute_pool().config().workers, 1, "默认串行");
+            assert_eq!(re.compute_pool().config().workers, 4, "默认并行 4");
 
             let mut re2 = RiskEngine::new();
-            re2.set_compute_config(ComputeConfig { workers: 4, serial_threshold: 0 });
-            assert_eq!(re2.compute_pool().config().workers, 4);
+            re2.set_compute_config(ComputeConfig { workers: 1, serial_threshold: 0 });
+            assert_eq!(re2.compute_pool().config().workers, 1);
         }
     }
 }
