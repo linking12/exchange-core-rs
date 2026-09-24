@@ -1,0 +1,44 @@
+R 4 SUCCESS
+R 5 SUCCESS
+R 6 SUCCESS
+R 7 SUCCESS
+R 8 SUCCESS
+R 9 SUCCESS
+R 10 SUCCESS
+R 11 SUCCESS
+R 12 SUCCESS
+STATE
+A 1 2 2950
+A 2 2 10000050
+EVENTS
+FE ADL_ORIGIN_CLOSE uid=1 cur=2 free=2900 locked=100
+FE ADL_ORIGIN_CLOSE uid=1 cur=2 free=3050 locked=0
+FE ADL_POSITION_CLOSE uid=2 cur=2 free=10000000 locked=0
+FE CLOSE_POSITION uid=2 cur=2 free=9999950 locked=50
+FE DEPOSIT uid=1 cur=2 free=3000 locked=0
+FE DEPOSIT uid=2 cur=2 free=10000000 locked=0
+FE LIQUIDATION_ALERT uid=1 cur=2 free=0 locked=0
+FE LOCK_PENDING uid=1 cur=2 free=2850 locked=150
+FE LOCK_PENDING uid=1 cur=2 free=2900 locked=100
+FE LOCK_PENDING uid=2 cur=2 free=9999900 locked=100
+FE LOCK_PENDING uid=2 cur=2 free=9999900 locked=100
+FE OPEN_POSITION uid=1 cur=2 free=2850 locked=150
+FE OPEN_POSITION uid=1 cur=2 free=2900 locked=100
+FE OPEN_POSITION uid=2 cur=2 free=9999900 locked=100
+FE PNL_SETTLEMENT uid=1 cur=2 free=2950 locked=0
+FE PNL_SETTLEMENT uid=1 cur=2 free=2950 locked=100
+FE PNL_SETTLEMENT uid=2 cur=2 free=10000050 locked=0
+FE UNLOCK_PENDING uid=1 cur=2 free=2900 locked=100
+FE UNLOCK_PENDING uid=1 cur=2 free=3000 locked=0
+FE UNLOCK_PENDING uid=2 cur=2 free=10000000 locked=0
+FE UNLOCK_PENDING uid=2 cur=2 free=9999900 locked=100
+MATCH
+ERF NEW NEW uid=2 oid=1 side=ASK maker=0 pos=ONEWAY cp=-1 px=1000 lastQty=0 lastPx=0 cumQty=0 cumQ=0 avgPx=0 fee=0 feeAsset=2
+ERF NEW NEW uid=1 oid=2 side=BID maker=0 pos=HEDGE cp=-1 px=1000 lastQty=0 lastPx=0 cumQty=0 cumQ=0 avgPx=0 fee=0 feeAsset=2
+ERF TRADE FILLED uid=1 oid=2 side=BID maker=0 pos=HEDGE cp=2 px=1000 lastQty=10 lastPx=1000 cumQty=10 cumQ=10000 avgPx=1000 fee=0 feeAsset=2
+ERF TRADE FILLED uid=2 oid=1 side=ASK maker=1 pos=ONEWAY cp=1 px=1000 lastQty=10 lastPx=1000 cumQty=10 cumQ=10000 avgPx=1000 fee=0 feeAsset=2
+ERF NEW NEW uid=2 oid=3 side=BID maker=0 pos=ONEWAY cp=-1 px=1000 lastQty=0 lastPx=0 cumQty=0 cumQ=0 avgPx=0 fee=0 feeAsset=2
+ERF NEW NEW uid=1 oid=4 side=ASK maker=0 pos=HEDGE cp=-1 px=1000 lastQty=0 lastPx=0 cumQty=0 cumQ=0 avgPx=0 fee=0 feeAsset=2
+ERF TRADE FILLED uid=1 oid=4 side=ASK maker=0 pos=HEDGE cp=2 px=1000 lastQty=5 lastPx=1000 cumQty=5 cumQ=5000 avgPx=1000 fee=0 feeAsset=2
+ERF TRADE FILLED uid=2 oid=3 side=BID maker=1 pos=ONEWAY cp=1 px=1000 lastQty=5 lastPx=1000 cumQty=5 cumQ=5000 avgPx=1000 fee=0 feeAsset=2
+ERF REJECT REJECTED uid=1 oid=43211666161664 side=ASK maker=0 pos=HEDGE cp=-1 px=990 lastQty=0 lastPx=0 cumQty=0 cumQ=0 avgPx=0 fee=0 feeAsset=2

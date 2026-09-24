@@ -8,7 +8,7 @@ use crate::core::common::cmd::order_command_type::OrderCommandType;
 use crate::core::common::core_symbol_specification::CoreSymbolSpecification;
 use crate::core::common::margin_mode::MarginMode;
 use crate::core::common::matcher_event_type::MatcherEventType;
-use crate::core::common::fund_event::{FundEvent, FundEventType};
+use crate::core::common::fund_event::{FundEvent, FundEventType, SYSTEM_TRIGGERED_ORDER_ID};
 use crate::core::common::order_action::OrderAction;
 use crate::core::common::order_type::OrderType;
 use crate::core::common::position_direction::PositionDirection;
@@ -158,7 +158,7 @@ impl LiquidationEngine {
             if position.margin_mode == MarginMode::Isolated {
                 match Self::check_isolated_decision(key, position, spec, mark_price) {
                     IsolatedCheck::Liquidate(d) => decisions.push(d),
-                    IsolatedCheck::Alert => alerts.push(Self::notification_event(FundEventType::MarginAlert, uid, position, spec, profile, ssp, last_price_cache)),
+                    IsolatedCheck::Alert => alerts.push(Self::notification_event(FundEventType::MarginAlert, SYSTEM_TRIGGERED_ORDER_ID, uid, position, spec, profile, ssp, last_price_cache)),
                     IsolatedCheck::Healthy => {}
                 }
             } else {
@@ -188,7 +188,8 @@ impl LiquidationEngine {
             };
             if let Some(pos) = profile.positions.get(&d.position_key) {
                 if let Some(spec) = ssp.get_symbol(pos.symbol) {
-                    fund_events.push(Self::notification_event(FundEventType::LiquidationAlert, uid, pos, spec, profile, ssp, last_price_cache));
+                    let alert_order_id = LiquidationService::generate_liquidation_order_id(uid, pos.symbol, pos.direction, ts);
+                    fund_events.push(Self::notification_event(FundEventType::LiquidationAlert, alert_order_id, uid, pos, spec, profile, ssp, last_price_cache));
                 }
             }
             self.start_liquidation_flow(profile, d, ts);
@@ -294,7 +295,7 @@ impl LiquidationEngine {
                     .and_then(|p| ssp.get_symbol(p.symbol).map(|s| (p, s)))
                 {
                     fund_events.push(Self::notification_event(
-                        FundEventType::MarginAlert, uid, position, spec, profile, ssp, last_price_cache,
+                        FundEventType::MarginAlert, SYSTEM_TRIGGERED_ORDER_ID, uid, position, spec, profile, ssp, last_price_cache,
                     ));
                 }
                 continue;
@@ -433,6 +434,7 @@ impl LiquidationEngine {
 
     fn notification_event(
         event_type: FundEventType,
+        order_id: i64,
         uid: i64,
         position: &SymbolPositionRecord,
         spec: &CoreSymbolSpecification,
@@ -444,6 +446,7 @@ impl LiquidationEngine {
         let mark = last_price_cache.get(&position.symbol).map(|r| r.mark_price).unwrap_or(0);
         FundEvent {
             event_type,
+            order_id,
             uid,
             symbol: position.symbol,
             currency: position.currency,

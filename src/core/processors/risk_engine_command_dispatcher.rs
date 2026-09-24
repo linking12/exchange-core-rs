@@ -351,8 +351,8 @@ impl RiskEngineCommandDispatcher {
                         currency_spec.currency_scale_k,
                     );
                     up.add_to_account(currency, refund);
-                    up.positions.get_mut(&key).unwrap().extra_margin = 0;
                     RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&key).unwrap(), &spec, up, ssp);
+                    up.positions.get_mut(&key).unwrap().extra_margin = 0;
                 }
 
                 let removed = engine.remove_position_record(up, key, &spec, &currency_spec);

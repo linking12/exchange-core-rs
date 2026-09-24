@@ -74,11 +74,12 @@ impl TwoStepCommandProcessor for AdlCommandProcessor {
             .unwrap_or_else(|| panic!("currency spec missing for currency {}", spec.quote_currency));
 
         let order_id = cmd.order_id;
+        let origin_uid = cmd.uid;
         let events = std::mem::take(&mut cmd.adl_events);
 
         for &(uid, exec_size) in &events {
             Self::apply_event(
-                ctx.risk, ctx.ups, symbol, action, price, order_id, uid, exec_size, &spec, &currency_spec,
+                ctx.risk, ctx.ups, symbol, action, price, order_id, origin_uid, uid, exec_size, &spec, &currency_spec,
                 &mut cmd.fund_events, ctx.ssp,
             );
         }
@@ -153,6 +154,7 @@ impl AdlCommandProcessor {
         action: OrderAction,
         price: i64,
         order_id: i64,
+        origin_uid: i64,
         uid: i64,
         exec_size: i64,
         spec: &CoreSymbolSpecification,
@@ -167,9 +169,10 @@ impl AdlCommandProcessor {
         if !up.positions.contains_key(&position_key) {
             return;
         }
+        let event_type = if uid == origin_uid { FundEventType::AdlOriginClose } else { FundEventType::AdlPositionClose };
         risk.close_and_settle_futures_position(
             up, position_key, action, exec_size, price, spec, currency_spec, fund_events, ssp,
-            FundEventType::AdlPositionClose, order_id,
+            event_type, order_id,
         );
     }
 
