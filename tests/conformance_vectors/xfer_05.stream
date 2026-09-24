@@ -1,0 +1,75 @@
+# 差分模糊(seed=5):内部划转 TRANSFER 随机流。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+USER uid=1
+BAL uid=1 cur=1 amount=100000 txid=1
+BAL uid=1 cur=2 amount=100000 txid=2
+USER uid=2
+BAL uid=2 cur=1 amount=100000 txid=3
+BAL uid=2 cur=2 amount=100000 txid=4
+USER uid=3
+BAL uid=3 cur=1 amount=100000 txid=5
+BAL uid=3 cur=2 amount=100000 txid=6
+USER uid=4
+BAL uid=4 cur=1 amount=100000 txid=7
+BAL uid=4 cur=2 amount=100000 txid=8
+TRANSFER from=4 to=3 cur=1 amount=20865 txid=9
+TRANSFER from=4 to=4 cur=1 amount=3074 txid=10
+TRANSFER from=4 to=4 cur=1 amount=10070 txid=11
+TRANSFER from=4 to=1 cur=2 amount=12032 txid=12
+TRANSFER from=1 to=3 cur=1 amount=13813 txid=13
+TRANSFER from=3 to=3 cur=1 amount=7941 txid=14
+TRANSFER from=2 to=2 cur=2 amount=10733 txid=15
+TRANSFER from=1 to=3 cur=1 amount=23920 txid=16
+TRANSFER from=1 to=3 cur=1 amount=1960 txid=17
+TRANSFER from=2 to=3 cur=2 amount=13871 txid=18
+TRANSFER from=3 to=2 cur=1 amount=39904 txid=19
+TRANSFER from=1 to=1 cur=1 amount=31087 txid=20
+TRANSFER from=1 to=4 cur=1 amount=38234 txid=21
+TRANSFER from=1 to=2 cur=2 amount=31220 txid=22
+TRANSFER from=4 to=4 cur=2 amount=83273448 txid=23
+TRANSFER from=3 to=4 cur=2 amount=16691 txid=24
+TRANSFER from=4 to=1 cur=1 amount=38875 txid=25
+TRANSFER from=3 to=3 cur=2 amount=20696 txid=26
+TRANSFER from=4 to=1 cur=2 amount=26662 txid=27
+TRANSFER from=3 to=1 cur=2 amount=26076 txid=28
+TRANSFER from=4 to=2 cur=1 amount=2569088 txid=29
+TRANSFER from=4 to=1 cur=1 amount=6589505 txid=30
+TRANSFER from=1 to=1 cur=1 amount=44577852 txid=31
+TRANSFER from=2 to=2 cur=2 amount=690 txid=32
+TRANSFER from=4 to=4 cur=2 amount=56868840 txid=33
+TRANSFER from=2 to=1 cur=2 amount=31585 txid=34
+TRANSFER from=2 to=4 cur=2 amount=34579 txid=35
+TRANSFER from=2 to=2 cur=1 amount=30454 txid=36
+TRANSFER from=1 to=2 cur=1 amount=90748745 txid=37
+TRANSFER from=2 to=3 cur=1 amount=39887 txid=38
+TRANSFER from=2 to=4 cur=1 amount=7470 txid=39
+TRANSFER from=3 to=3 cur=2 amount=5201 txid=40
+TRANSFER from=2 to=4 cur=2 amount=10484 txid=41
+TRANSFER from=2 to=2 cur=2 amount=6930 txid=42
+TRANSFER from=1 to=3 cur=2 amount=78350831 txid=43
+TRANSFER from=3 to=4 cur=2 amount=25890 txid=44
+TRANSFER from=4 to=3 cur=1 amount=11445663 txid=45
+TRANSFER from=1 to=1 cur=2 amount=8815 txid=46
+TRANSFER from=3 to=1 cur=1 amount=31898 txid=47
+TRANSFER from=1 to=3 cur=1 amount=9360 txid=48
+TRANSFER from=3 to=1 cur=1 amount=20156 txid=49
+TRANSFER from=2 to=1 cur=2 amount=17398 txid=50
+TRANSFER from=4 to=3 cur=1 amount=26653 txid=51
+TRANSFER from=4 to=2 cur=2 amount=11311 txid=52
+TRANSFER from=3 to=3 cur=1 amount=31749 txid=53
+TRANSFER from=3 to=2 cur=1 amount=43856376 txid=54
+TRANSFER from=1 to=4 cur=1 amount=6699857 txid=55
+TRANSFER from=1 to=3 cur=2 amount=3880 txid=56
+TRANSFER from=2 to=1 cur=1 amount=66063319 txid=57
+TRANSFER from=4 to=1 cur=2 amount=33936 txid=58
+TRANSFER from=4 to=3 cur=1 amount=3513 txid=59
+TRANSFER from=2 to=4 cur=1 amount=35076 txid=60
+TRANSFER from=4 to=1 cur=2 amount=15301 txid=61
+TRANSFER from=2 to=4 cur=2 amount=39648 txid=62
+TRANSFER from=3 to=3 cur=1 amount=32594 txid=63
+TRANSFER from=3 to=3 cur=2 amount=21549 txid=64
+TRANSFER from=1 to=4 cur=1 amount=31886 txid=65
+TRANSFER from=4 to=1 cur=1 amount=34247 txid=66
+TRANSFER from=2 to=3 cur=2 amount=99181635 txid=67
+TRANSFER from=3 to=1 cur=1 amount=21152 txid=68

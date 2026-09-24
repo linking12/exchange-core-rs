@@ -40,6 +40,10 @@ const N_MIX_VECTORS: usize = 10;
 const N_FMIX_VECTORS: usize = 8;
 const N_PERPOPS_VECTORS: usize = 8;
 const N_LOAN_VECTORS: usize = 8;
+const N_XLOAN_VECTORS: usize = 8;
+const N_XFER_VECTORS: usize = 6;
+const N_DELIV_VECTORS: usize = 8;
+const N_FUNDOPS_VECTORS: usize = 6;
 
 fn gen_vector(seed: u64) -> String {
     let mut rng = seeded_rng(seed, 0);
@@ -367,6 +371,146 @@ fn gen_loan_vector(seed: u64) -> String {
     s
 }
 
+/// cross 组合贷流:LOAN_GLOBAL(numeraire=2)+ 抵押品估值走 MARK,随机 CROSS_BORROW/REPAY/ADD_COLLATERAL/WITHDRAW_COLLATERAL。
+fn gen_cross_loan_vector(seed: u64) -> String {
+    let mut rng = seeded_rng(seed, 0xC705);
+    let mut s = String::new();
+    writeln!(s, "# 差分模糊(seed={seed}):cross 组合贷 BORROW/REPAY/COLLATERAL 交织。勿手改;由 gen_conformance_fuzz 生成。").unwrap();
+    writeln!(s, "CUR id=1 digit=0").unwrap();
+    writeln!(s, "CUR id=2 digit=0").unwrap();
+    writeln!(s, "SYM_SPOT id=600 base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 initialLtv=0 liqLtv=0 marginCallLtv=0 maxAmount=0 maxTermDays=0").unwrap();
+    writeln!(s, "MARK sym=600 price=1000").unwrap();
+    writeln!(s, "LOAN_SYMBOL sym=600 initialLtv=6000 liqLtv=8500 marginCallLtv=7500 maxAmount=0 maxTermDays=365 collateralWeight=10000").unwrap();
+    writeln!(s, "LOAN_GLOBAL numeraire=2 crossLiqLtv=8500 crossMcLtv=7500").unwrap();
+    writeln!(s, "POOL_DEPOSIT cur=2 amount=1000000000 txid=1").unwrap();
+    let mut txid = 2;
+    for uid in 1..=N_USERS {
+        writeln!(s, "USER uid={uid}").unwrap();
+        writeln!(s, "BAL uid={uid} cur=1 amount=1000000 txid={txid}").unwrap();
+        txid += 1;
+    }
+    for uid in 1..=N_USERS {
+        writeln!(s, "LOAN_CROSS_ADD_COLLATERAL uid={uid} cur=1 amount={} txid={txid} ts=0", rng.range(500, 3000)).unwrap();
+        txid += 1;
+    }
+    let mut loan_id = 9000;
+    let mut loans: Vec<(i64, i64)> = Vec::new();
+    for _ in 0..CMDS_PER_VEC {
+        let roll = rng.range(0, 10);
+        if roll < 4 || loans.is_empty() {
+            loan_id += 1;
+            let uid = rng.range(1, N_USERS + 1);
+            let principal = if rng.range(0, 12) == 0 { rng.range(1, 100000000) } else { rng.range(1, 100000) };
+            writeln!(s, "LOAN_CROSS_BORROW uid={uid} sym=600 loanId={loan_id} principal={principal} txid={txid} ts=0").unwrap();
+            txid += 1;
+            loans.push((loan_id, uid));
+        } else {
+            let idx = (rng.next_u64() % loans.len() as u64) as usize;
+            let (l, u) = loans[idx];
+            match rng.range(0, 3) {
+                0 => writeln!(s, "LOAN_CROSS_REPAY uid={u} loanId={l} repay={} txid={txid} ts=0", rng.range(1, 80000)).unwrap(),
+                1 => writeln!(s, "LOAN_CROSS_ADD_COLLATERAL uid={u} cur=1 amount={} txid={txid} ts=0", rng.range(1, 1000)).unwrap(),
+                _ => writeln!(s, "LOAN_CROSS_WITHDRAW_COLLATERAL uid={u} cur=1 amount={} txid={txid} ts=0", rng.range(1, 1500)).unwrap(),
+            }
+            txid += 1;
+        }
+    }
+    s
+}
+
+/// 内部划转流:随机 TRANSFER(含自转、超额被拒),两侧结果码 + 账户逐值一致。
+fn gen_transfer_vector(seed: u64) -> String {
+    let mut rng = seeded_rng(seed, 0x713A);
+    let mut s = String::new();
+    writeln!(s, "# 差分模糊(seed={seed}):内部划转 TRANSFER 随机流。勿手改;由 gen_conformance_fuzz 生成。").unwrap();
+    writeln!(s, "CUR id=1 digit=0").unwrap();
+    writeln!(s, "CUR id=2 digit=0").unwrap();
+    let mut txid = 1;
+    for uid in 1..=N_USERS {
+        writeln!(s, "USER uid={uid}").unwrap();
+        writeln!(s, "BAL uid={uid} cur=1 amount=100000 txid={txid}").unwrap();
+        txid += 1;
+        writeln!(s, "BAL uid={uid} cur=2 amount=100000 txid={txid}").unwrap();
+        txid += 1;
+    }
+    for _ in 0..CMDS_PER_VEC {
+        let from = rng.range(1, N_USERS + 1);
+        let to = rng.range(1, N_USERS + 1);
+        let cur = rng.range(1, 3);
+        let amount = if rng.range(0, 8) == 0 { rng.range(1, 100000000) } else { rng.range(1, 40000) };
+        writeln!(s, "TRANSFER from={from} to={to} cur={cur} amount={amount} txid={txid}").unwrap();
+        txid += 1;
+    }
+    s
+}
+
+/// 交割合约流:DELIVERY 期货成对开仓 + 随机 SETTLE_PNL(不同结算价)。同步结算 → events-on 逐值对拍。
+fn gen_delivery_vector(seed: u64) -> String {
+    let mut rng = seeded_rng(seed, 0xDE11);
+    let mut s = String::new();
+    writeln!(s, "# 差分模糊(seed={seed}):DELIVERY 期货开仓 + SETTLE_PNL 交割结算。勿手改;由 gen_conformance_fuzz 生成。").unwrap();
+    writeln!(s, "CUR id=1 digit=0").unwrap();
+    writeln!(s, "CUR id=2 digit=0").unwrap();
+    writeln!(s, "SYM_FUT id=10010 kind=DELIVERY base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 feeScale=0 initMargin=1 initMarginScaleK=100").unwrap();
+    writeln!(s, "MARK sym=10010 price=1000").unwrap();
+    let mut txid = 1;
+    for uid in 1..=N_USERS {
+        writeln!(s, "USER uid={uid}").unwrap();
+        writeln!(s, "BAL uid={uid} cur=2 amount=100000000 txid={txid}").unwrap();
+        txid += 1;
+    }
+    let mut oid = 6000;
+    let open_pair = |s: &mut String, rng: &mut Rng, oid: &mut i64| {
+        let price = rng.range(900, 1101);
+        let size = rng.range(2, 8);
+        let a = rng.range(1, N_USERS);
+        let b = a + 1;
+        let (m, t) = if rng.range(0, 2) == 0 { ("BID", "ASK") } else { ("ASK", "BID") };
+        *oid += 1;
+        writeln!(s, "PLACE_FUT oid={oid} uid={a} sym=10010 price={price} size={size} action={m} type=GTC leverage=1 margin=CROSS", oid = *oid).unwrap();
+        *oid += 1;
+        writeln!(s, "PLACE_FUT oid={oid} uid={b} sym=10010 price={price} size={size} action={t} type=GTC leverage=1 margin=CROSS", oid = *oid).unwrap();
+    };
+    for _ in 0..3 {
+        open_pair(&mut s, &mut rng, &mut oid);
+    }
+    for _ in 0..CMDS_PER_VEC {
+        if rng.range(0, 3) == 0 {
+            let price = rng.range(600, 1501);
+            writeln!(s, "SETTLE_PNL sym=10010 price={price} txid={txid}").unwrap();
+            txid += 1;
+        } else {
+            open_pair(&mut s, &mut rng, &mut oid);
+        }
+    }
+    s
+}
+
+/// 资金池/保险基金流:随机 POOL/IF/LIF 存取(含超额取被拒),两侧结果码一致。
+fn gen_fund_ops_vector(seed: u64) -> String {
+    let mut rng = seeded_rng(seed, 0xFACE);
+    let mut s = String::new();
+    writeln!(s, "# 差分模糊(seed={seed}):POOL/IF/LIF 存取随机流。勿手改;由 gen_conformance_fuzz 生成。").unwrap();
+    writeln!(s, "CUR id=1 digit=0").unwrap();
+    writeln!(s, "CUR id=2 digit=0").unwrap();
+    writeln!(s, "SYM_FUT id=8008 kind=PERP base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 feeScale=0 initMargin=1 initMarginScaleK=10").unwrap();
+    let mut txid = 1;
+    for _ in 0..CMDS_PER_VEC {
+        let cur = rng.range(1, 3);
+        let amount = if rng.range(0, 6) == 0 { rng.range(1, 100000000) } else { rng.range(1, 500000) };
+        match rng.range(0, 6) {
+            0 => writeln!(s, "POOL_DEPOSIT cur={cur} amount={amount} txid={txid}").unwrap(),
+            1 => writeln!(s, "POOL_WITHDRAW cur={cur} amount={amount} txid={txid}").unwrap(),
+            2 => writeln!(s, "IF_DEPOSIT sym=8008 amount={amount} txid={txid}").unwrap(),
+            3 => writeln!(s, "IF_WITHDRAW sym=8008 amount={amount} txid={txid}").unwrap(),
+            4 => writeln!(s, "LIF_DEPOSIT cur={cur} amount={amount} txid={txid}").unwrap(),
+            _ => writeln!(s, "LIF_WITHDRAW cur={cur} amount={amount} txid={txid}").unwrap(),
+        }
+        txid += 1;
+    }
+    s
+}
+
 fn main() {
     // 默认写入库目录、种子=向量序号(可复现,入库);live-diff 编排传 `--out <dir> --seed <base>` 写临时目录、
     // 用新鲜种子(如 epoch)每次生成不同随机流,覆盖远超 47 个入库向量。
@@ -414,9 +558,29 @@ fn main() {
         fs::write(dir.join(&name), gen_loan_vector(seed_base.wrapping_add(i as u64))).unwrap();
         println!("生成 {name}");
     }
+    for i in 0..N_XLOAN_VECTORS {
+        let name = format!("xloan_{i:02}.stream");
+        fs::write(dir.join(&name), gen_cross_loan_vector(seed_base.wrapping_add(i as u64))).unwrap();
+        println!("生成 {name}");
+    }
+    for i in 0..N_XFER_VECTORS {
+        let name = format!("xfer_{i:02}.stream");
+        fs::write(dir.join(&name), gen_transfer_vector(seed_base.wrapping_add(i as u64))).unwrap();
+        println!("生成 {name}");
+    }
+    for i in 0..N_DELIV_VECTORS {
+        let name = format!("deliv_{i:02}.stream");
+        fs::write(dir.join(&name), gen_delivery_vector(seed_base.wrapping_add(i as u64))).unwrap();
+        println!("生成 {name}");
+    }
+    for i in 0..N_FUNDOPS_VECTORS {
+        let name = format!("fundops_{i:02}.stream");
+        fs::write(dir.join(&name), gen_fund_ops_vector(seed_base.wrapping_add(i as u64))).unwrap();
+        println!("生成 {name}");
+    }
     println!(
         "\n完成 {} 个模糊向量(seed_base={seed_base}) → {}\n下一步:\n  1) cd ../exchange-core && mvn -q -Dtest=ConformanceExporter -DfailIfNoTests=false test\n  2) cargo test --test conformance",
-        N_VECTORS + N_FUT_VECTORS + N_LIQ_VECTORS + N_MIX_VECTORS + N_FMIX_VECTORS + N_PERPOPS_VECTORS + N_LOAN_VECTORS,
+        N_VECTORS + N_FUT_VECTORS + N_LIQ_VECTORS + N_MIX_VECTORS + N_FMIX_VECTORS + N_PERPOPS_VECTORS + N_LOAN_VECTORS + N_XLOAN_VECTORS + N_XFER_VECTORS + N_DELIV_VECTORS + N_FUNDOPS_VECTORS,
         dir.display()
     );
 }

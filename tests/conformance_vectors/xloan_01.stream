@@ -1,0 +1,80 @@
+# 差分模糊(seed=1):cross 组合贷 BORROW/REPAY/COLLATERAL 交织。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_SPOT id=600 base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 initialLtv=0 liqLtv=0 marginCallLtv=0 maxAmount=0 maxTermDays=0
+MARK sym=600 price=1000
+LOAN_SYMBOL sym=600 initialLtv=6000 liqLtv=8500 marginCallLtv=7500 maxAmount=0 maxTermDays=365 collateralWeight=10000
+LOAN_GLOBAL numeraire=2 crossLiqLtv=8500 crossMcLtv=7500
+POOL_DEPOSIT cur=2 amount=1000000000 txid=1
+USER uid=1
+BAL uid=1 cur=1 amount=1000000 txid=2
+USER uid=2
+BAL uid=2 cur=1 amount=1000000 txid=3
+USER uid=3
+BAL uid=3 cur=1 amount=1000000 txid=4
+USER uid=4
+BAL uid=4 cur=1 amount=1000000 txid=5
+LOAN_CROSS_ADD_COLLATERAL uid=1 cur=1 amount=557 txid=6 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=2 cur=1 amount=911 txid=7 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=3 cur=1 amount=1039 txid=8 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=599 txid=9 ts=0
+LOAN_CROSS_BORROW uid=2 sym=600 loanId=9001 principal=72018 txid=10 ts=0
+LOAN_CROSS_BORROW uid=3 sym=600 loanId=9002 principal=6075 txid=11 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9003 principal=4327625 txid=12 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=3 cur=1 amount=389 txid=13 ts=0
+LOAN_CROSS_REPAY uid=2 loanId=9001 repay=19973 txid=14 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=3 cur=1 amount=244 txid=15 ts=0
+LOAN_CROSS_BORROW uid=1 sym=600 loanId=9004 principal=61709 txid=16 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9005 principal=56120 txid=17 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9006 principal=64747 txid=18 ts=0
+LOAN_CROSS_BORROW uid=2 sym=600 loanId=9007 principal=87322256 txid=19 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=2 cur=1 amount=665 txid=20 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=680 txid=21 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=4 cur=1 amount=589 txid=22 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=4 cur=1 amount=1195 txid=23 ts=0
+LOAN_CROSS_REPAY uid=4 loanId=9005 repay=31970 txid=24 ts=0
+LOAN_CROSS_REPAY uid=3 loanId=9002 repay=31748 txid=25 ts=0
+LOAN_CROSS_BORROW uid=3 sym=600 loanId=9008 principal=24302 txid=26 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=2 cur=1 amount=20 txid=27 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=3 cur=1 amount=522 txid=28 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=4 cur=1 amount=547 txid=29 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9009 principal=4388 txid=30 ts=0
+LOAN_CROSS_REPAY uid=4 loanId=9003 repay=27967 txid=31 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=3 cur=1 amount=1340 txid=32 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9010 principal=7728 txid=33 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=2 cur=1 amount=906 txid=34 ts=0
+LOAN_CROSS_BORROW uid=2 sym=600 loanId=9011 principal=28985 txid=35 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=105 txid=36 ts=0
+LOAN_CROSS_BORROW uid=3 sym=600 loanId=9012 principal=50930 txid=37 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9013 principal=58976 txid=38 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=2 cur=1 amount=235 txid=39 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=2 cur=1 amount=884 txid=40 ts=0
+LOAN_CROSS_BORROW uid=1 sym=600 loanId=9014 principal=23498 txid=41 ts=0
+LOAN_CROSS_BORROW uid=2 sym=600 loanId=9015 principal=9015687 txid=42 ts=0
+LOAN_CROSS_BORROW uid=2 sym=600 loanId=9016 principal=36540406 txid=43 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=2 cur=1 amount=911 txid=44 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=4 cur=1 amount=77 txid=45 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=849 txid=46 ts=0
+LOAN_CROSS_REPAY uid=4 loanId=9003 repay=32617 txid=47 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9017 principal=75462821 txid=48 ts=0
+LOAN_CROSS_BORROW uid=3 sym=600 loanId=9018 principal=63498 txid=49 ts=0
+LOAN_CROSS_REPAY uid=4 loanId=9005 repay=26392 txid=50 ts=0
+LOAN_CROSS_BORROW uid=1 sym=600 loanId=9019 principal=67963 txid=51 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9020 principal=38188 txid=52 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9021 principal=82412 txid=53 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=763 txid=54 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=4 cur=1 amount=218 txid=55 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=842 txid=56 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=318 txid=57 ts=0
+LOAN_CROSS_BORROW uid=3 sym=600 loanId=9022 principal=35137 txid=58 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=3 cur=1 amount=274 txid=59 ts=0
+LOAN_CROSS_BORROW uid=1 sym=600 loanId=9023 principal=47244 txid=60 ts=0
+LOAN_CROSS_WITHDRAW_COLLATERAL uid=3 cur=1 amount=1025 txid=61 ts=0
+LOAN_CROSS_REPAY uid=1 loanId=9023 repay=70272 txid=62 ts=0
+LOAN_CROSS_BORROW uid=4 sym=600 loanId=9024 principal=69731 txid=63 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=644 txid=64 ts=0
+LOAN_CROSS_REPAY uid=4 loanId=9003 repay=54961 txid=65 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=861 txid=66 ts=0
+LOAN_CROSS_ADD_COLLATERAL uid=4 cur=1 amount=565 txid=67 ts=0
+LOAN_CROSS_BORROW uid=1 sym=600 loanId=9025 principal=10864 txid=68 ts=0
+LOAN_CROSS_REPAY uid=1 loanId=9019 repay=65549 txid=69 ts=0

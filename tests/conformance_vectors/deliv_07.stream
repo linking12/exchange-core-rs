@@ -1,0 +1,119 @@
+# 差分模糊(seed=7):DELIVERY 期货开仓 + SETTLE_PNL 交割结算。勿手改;由 gen_conformance_fuzz 生成。
+CUR id=1 digit=0
+CUR id=2 digit=0
+SYM_FUT id=10010 kind=DELIVERY base=1 quote=2 baseScale=1 quoteScale=1 taker=0 maker=0 feeScale=0 initMargin=1 initMarginScaleK=100
+MARK sym=10010 price=1000
+USER uid=1
+BAL uid=1 cur=2 amount=100000000 txid=1
+USER uid=2
+BAL uid=2 cur=2 amount=100000000 txid=2
+USER uid=3
+BAL uid=3 cur=2 amount=100000000 txid=3
+USER uid=4
+BAL uid=4 cur=2 amount=100000000 txid=4
+PLACE_FUT oid=6001 uid=2 sym=10010 price=1067 size=2 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6002 uid=3 sym=10010 price=1067 size=2 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6003 uid=2 sym=10010 price=1087 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6004 uid=3 sym=10010 price=1087 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6005 uid=2 sym=10010 price=982 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6006 uid=3 sym=10010 price=982 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1375 txid=5
+PLACE_FUT oid=6007 uid=2 sym=10010 price=1095 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6008 uid=3 sym=10010 price=1095 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6009 uid=3 sym=10010 price=959 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6010 uid=4 sym=10010 price=959 size=3 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6011 uid=3 sym=10010 price=1002 size=3 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6012 uid=4 sym=10010 price=1002 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6013 uid=2 sym=10010 price=965 size=5 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6014 uid=3 sym=10010 price=965 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6015 uid=3 sym=10010 price=1049 size=2 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6016 uid=4 sym=10010 price=1049 size=2 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6017 uid=2 sym=10010 price=981 size=2 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6018 uid=3 sym=10010 price=981 size=2 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6019 uid=1 sym=10010 price=1080 size=2 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6020 uid=2 sym=10010 price=1080 size=2 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1239 txid=6
+PLACE_FUT oid=6021 uid=3 sym=10010 price=1088 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6022 uid=4 sym=10010 price=1088 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6023 uid=1 sym=10010 price=1001 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6024 uid=2 sym=10010 price=1001 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6025 uid=1 sym=10010 price=902 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6026 uid=2 sym=10010 price=902 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6027 uid=2 sym=10010 price=968 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6028 uid=3 sym=10010 price=968 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6029 uid=1 sym=10010 price=1090 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6030 uid=2 sym=10010 price=1090 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6031 uid=1 sym=10010 price=959 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6032 uid=2 sym=10010 price=959 size=4 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1460 txid=7
+PLACE_FUT oid=6033 uid=3 sym=10010 price=970 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6034 uid=4 sym=10010 price=970 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6035 uid=2 sym=10010 price=1017 size=5 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6036 uid=3 sym=10010 price=1017 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6037 uid=1 sym=10010 price=1003 size=7 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6038 uid=2 sym=10010 price=1003 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=816 txid=8
+SETTLE_PNL sym=10010 price=699 txid=9
+PLACE_FUT oid=6039 uid=1 sym=10010 price=994 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6040 uid=2 sym=10010 price=994 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6041 uid=2 sym=10010 price=1014 size=5 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6042 uid=3 sym=10010 price=1014 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=686 txid=10
+PLACE_FUT oid=6043 uid=2 sym=10010 price=1096 size=5 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6044 uid=3 sym=10010 price=1096 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1457 txid=11
+PLACE_FUT oid=6045 uid=1 sym=10010 price=968 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6046 uid=2 sym=10010 price=968 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=875 txid=12
+PLACE_FUT oid=6047 uid=2 sym=10010 price=960 size=5 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6048 uid=3 sym=10010 price=960 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6049 uid=1 sym=10010 price=921 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6050 uid=2 sym=10010 price=921 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6051 uid=3 sym=10010 price=981 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6052 uid=4 sym=10010 price=981 size=7 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=625 txid=13
+PLACE_FUT oid=6053 uid=1 sym=10010 price=912 size=2 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6054 uid=2 sym=10010 price=912 size=2 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6055 uid=2 sym=10010 price=909 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6056 uid=3 sym=10010 price=909 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6057 uid=2 sym=10010 price=1024 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6058 uid=3 sym=10010 price=1024 size=7 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=809 txid=14
+PLACE_FUT oid=6059 uid=1 sym=10010 price=1088 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6060 uid=2 sym=10010 price=1088 size=7 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6061 uid=2 sym=10010 price=909 size=7 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6062 uid=3 sym=10010 price=909 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6063 uid=2 sym=10010 price=1038 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6064 uid=3 sym=10010 price=1038 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6065 uid=3 sym=10010 price=910 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6066 uid=4 sym=10010 price=910 size=3 action=ASK type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=763 txid=15
+SETTLE_PNL sym=10010 price=1021 txid=16
+SETTLE_PNL sym=10010 price=642 txid=17
+SETTLE_PNL sym=10010 price=1404 txid=18
+SETTLE_PNL sym=10010 price=775 txid=19
+SETTLE_PNL sym=10010 price=1352 txid=20
+PLACE_FUT oid=6067 uid=1 sym=10010 price=1002 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6068 uid=2 sym=10010 price=1002 size=7 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6069 uid=2 sym=10010 price=938 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6070 uid=3 sym=10010 price=938 size=5 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1243 txid=21
+PLACE_FUT oid=6071 uid=1 sym=10010 price=1065 size=6 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6072 uid=2 sym=10010 price=1065 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6073 uid=1 sym=10010 price=1076 size=4 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6074 uid=2 sym=10010 price=1076 size=4 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6075 uid=3 sym=10010 price=943 size=3 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6076 uid=4 sym=10010 price=943 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6077 uid=1 sym=10010 price=930 size=7 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6078 uid=2 sym=10010 price=930 size=7 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6079 uid=2 sym=10010 price=1083 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6080 uid=3 sym=10010 price=1083 size=5 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1347 txid=22
+PLACE_FUT oid=6081 uid=1 sym=10010 price=1088 size=6 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6082 uid=2 sym=10010 price=1088 size=6 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1466 txid=23
+PLACE_FUT oid=6083 uid=2 sym=10010 price=926 size=3 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6084 uid=3 sym=10010 price=926 size=3 action=BID type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6085 uid=1 sym=10010 price=922 size=5 action=ASK type=GTC leverage=1 margin=CROSS
+PLACE_FUT oid=6086 uid=2 sym=10010 price=922 size=5 action=BID type=GTC leverage=1 margin=CROSS
+SETTLE_PNL sym=10010 price=1148 txid=24
