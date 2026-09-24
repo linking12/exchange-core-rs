@@ -13,23 +13,24 @@ rust-version = "1.75"
 testing = []
 
 [dependencies]
-lz4_flex = "0.11"
-# 日志门面（facade only，无 backend）：对引擎是纯副作用、不碰任何复制态，不影响确定性；
-# 默认无 logger 时 trace!/debug! 宏短路、零开销。由上层 Raft server 决定是否装 backend 及输出级别。
+# 日志门面（facade only，无 backend）：纯副作用、不碰复制态、不影响确定性；无 logger 时宏短路零开销。
 log = "0.4"
+# 快照 .dat 帧的 LZ4 解码（module_frame）；Java 生产快照可选压缩。
+lz4_flex = "0.11"
+# 内部批量扫描（funding/强平/ADL/loan）的确定性并行执行池（ComputePool）。
 rayon = "1"
 
 [dev-dependencies]
 proptest = "1"
-# self dev-dependency:让 `cargo test`(含 tests/ 集成测试)自动带上 testing feature,从而看到内省访问器。
+# self dev-dependency:让 `cargo test` 自动带上 testing feature,看到内省访问器。
 exchange-core-rs = { path = ".", features = ["testing"] }
 
-# 纯引擎吞吐基准（绕开 Raft，直接灌 process_command）。自带 main（harness=false），零额外依赖，用 std::time 计时。
-# 跑：cargo bench --bench engine_throughput
+# 纯引擎吞吐:绕开 Raft 直灌 process_command。跑:cargo bench --bench engine_throughput
 [[bench]]
 name = "engine_throughput"
 harness = false
 
+# 单命令停顿:funding/强平在 N 持仓下阻塞单管线的墙钟。跑:cargo bench --bench parallel_scan_bench
 [[bench]]
 name = "parallel_scan_bench"
 harness = false
