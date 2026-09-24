@@ -363,6 +363,9 @@ impl RiskEngineCommandDispatcher {
     }
 
     fn if_deposit(engine: &mut RiskEngine, cmd: &OrderCommand, ssp: &SymbolSpecificationProvider) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         let spec = match ssp.get_symbol(cmd.symbol) {
             Some(s) => s,
             None => return CommandResultCode::InvalidSymbol,
@@ -397,6 +400,9 @@ impl RiskEngineCommandDispatcher {
     }
 
     fn if_withdraw(engine: &mut RiskEngine, cmd: &OrderCommand, ssp: &SymbolSpecificationProvider) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         let spec = match ssp.get_symbol(cmd.symbol) {
             Some(s) => s,
             None => return CommandResultCode::InvalidSymbol,

@@ -779,6 +779,9 @@ impl LoanCommandDispatcher {
     }
 
     fn handle_pool_deposit(engine: &mut RiskEngine, cmd: &OrderCommand) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         if cmd.size <= 0 {
             return CommandResultCode::LoanInvalidAmount;
         }
@@ -788,6 +791,9 @@ impl LoanCommandDispatcher {
     }
 
     fn handle_pool_withdraw(engine: &mut RiskEngine, cmd: &OrderCommand) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         if cmd.size <= 0 {
             return CommandResultCode::LoanInvalidAmount;
         }
@@ -800,6 +806,9 @@ impl LoanCommandDispatcher {
     }
 
     fn handle_loan_if_deposit(engine: &mut RiskEngine, cmd: &OrderCommand) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         if cmd.size <= 0 {
             return CommandResultCode::LoanInvalidAmount;
         }
@@ -809,6 +818,9 @@ impl LoanCommandDispatcher {
     }
 
     fn handle_loan_if_withdraw(engine: &mut RiskEngine, cmd: &OrderCommand) -> CommandResultCode {
+        if cmd.uid != 0 {
+            return CommandResultCode::Success;
+        }
         if cmd.size <= 0 {
             return CommandResultCode::LoanInvalidAmount;
         }

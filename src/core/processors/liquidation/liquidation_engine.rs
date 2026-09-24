@@ -772,6 +772,44 @@ mod tests {
     }
 
     #[test]
+    fn margin_alert_event_carries_system_triggered_order_id() {
+        let (mut engine, mut ups, ssp, mut lpc) = seeded();
+        engine.on_position_opened(UID, FUT_SYMBOL);
+        insert_long(&mut ups, UID);
+        lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(95));
+        let cmd = markprice_cmd(FUT_SYMBOL, 5_000);
+
+        let mut fund_events = Vec::new();
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut fund_events);
+
+        let alert = fund_events
+            .iter()
+            .find(|e| e.event_type == FundEventType::MarginAlert)
+            .expect("isolated 保证金预警场景必须产出 MarginAlert 事件");
+        assert_eq!(alert.order_id, SYSTEM_TRIGGERED_ORDER_ID);
+    }
+
+    #[test]
+    fn liquidation_alert_event_order_id_equals_generated_liquidation_order_id() {
+        let (mut engine, mut ups, ssp, mut lpc) = seeded();
+        let _out = attach_collector(&mut engine);
+        engine.on_position_opened(UID, FUT_SYMBOL);
+        insert_long(&mut ups, UID);
+        lpc.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(50));
+        let cmd = markprice_cmd(FUT_SYMBOL, 5_000);
+
+        let mut fund_events = Vec::new();
+        engine.check_positions(&cmd, &mut ups, &ssp, &lpc, &LoanService::new(), &ComputePool::default(), &mut fund_events);
+
+        let alert = fund_events
+            .iter()
+            .find(|e| e.event_type == FundEventType::LiquidationAlert)
+            .expect("保证金击穿场景必须产出 LiquidationAlert 事件");
+        let expected = LiquidationService::generate_liquidation_order_id(UID, FUT_SYMBOL, PositionDirection::Long, 5_000);
+        assert_eq!(alert.order_id, expected);
+    }
+
+    #[test]
     fn check_cross_scaled_maintenance_truncates_to_zero_no_panic_no_force() {
         const SYMBOL: i32 = 5001;
         const BASE_CCY: i32 = 10;

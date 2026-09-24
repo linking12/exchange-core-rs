@@ -159,14 +159,6 @@ impl LiquidationService {
         out
     }
 
-    /// Serial fold of `user_profitable_positions` over every user. As of the parallel-scan refactor the ADL
-    /// path scans via `user_profitable_positions` + `map_users` directly, so this method has no in-crate
-    /// non-test callers; it is retained as public API and additionally performs the live
-    /// write-back of the computed CROSS `adl_eligibility` factor into `UserProfileService`,
-    /// which the read-only `user_profitable_positions` cannot do. That write-back is safe to omit on the ADL
-    /// path because `adl_eligibility` is non-replicated scratch (excluded from `state_hash`,
-    /// recomputed each scan). If a caller ever needs the live write-back it should be proven by
-    /// a real caller rather than this wrapper.
     #[cfg(test)]
     pub fn compute_profitable_positions_by_symbol(
         ups: &mut UserProfileService,

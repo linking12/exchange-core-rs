@@ -4822,6 +4822,58 @@ mod tests {
         assert_eq!(ups.get(UID).unwrap().positions.get(&FUT_SYMBOL).unwrap().extra_margin, 200);
     }
 
+    #[test]
+    fn settle_pnl_delivery_margin_refund_event_snapshots_extra_margin_before_zeroing() {
+        let mut ssp = SymbolSpecificationProvider::new();
+        let delivery_spec = CoreSymbolSpecification {
+            symbol_id: FUT_SYMBOL,
+            symbol_type: SymbolType::FuturesContractDelivery,
+            base_currency: FUT_BASE,
+            quote_currency: FUT_QUOTE,
+            base_scale_k: 1,
+            quote_scale_k: 1,
+            taker_fee: 0,
+            maker_fee: 0,
+            fee_scale_k: 0,
+            ..Default::default()
+        };
+        assert_eq!(ssp.add_symbol(delivery_spec), CommandResultCode::Success);
+        ssp.add_currency(CoreCurrencySpecification { currency: FUT_QUOTE, currency_scale_k: 1, ..Default::default() });
+        ssp.add_currency(CoreCurrencySpecification { currency: FUT_BASE, currency_scale_k: 1, ..Default::default() });
+
+        let mut ups = UserProfileService::new();
+        assert_eq!(ups.add_empty_user_profile(UID), CommandResultCode::Success);
+        ups.get_mut(UID).unwrap().add_to_account(FUT_QUOTE, 10_000);
+
+        let mut position = isolated_position(1);
+        position.direction = PositionDirection::Long;
+        position.open_volume = 10;
+        position.open_price_sum = 1_000;
+        position.open_init_margin_sum = 1_000;
+        position.extra_margin = 200;
+        ups.get_mut(UID).unwrap().positions.insert(FUT_SYMBOL, position);
+
+        let mut engine = RiskEngine::new();
+        engine.last_price_cache.insert(FUT_SYMBOL, LastPriceCacheRecord::with_mark(100));
+
+        let mut cmd = OrderCommand {
+            command: OrderCommandType::SettlePnl,
+            symbol: FUT_SYMBOL,
+            price: 100,
+            uid: UID,
+            ..Default::default()
+        };
+        assert_eq!(RiskEngineCommandDispatcher::dispatch(&mut engine, &mut cmd, &mut ups, &ssp), CommandResultCode::Success);
+
+        let refund_event = cmd
+            .fund_events
+            .iter()
+            .find(|e| e.event_type == FundEventType::MarginRefund)
+            .expect("交割平仓带 extra_margin 的持仓必须产出 MarginRefund 事件");
+        assert_eq!(refund_event.extra_margin, 200);
+        assert!(!ups.get(UID).unwrap().positions.contains_key(&FUT_SYMBOL));
+    }
+
     fn markprice_adjustment_cmd(symbol: i32, price: i64) -> OrderCommand {
         OrderCommand { command: OrderCommandType::MarkpriceAdjustment, symbol, price, ..Default::default() }
     }
