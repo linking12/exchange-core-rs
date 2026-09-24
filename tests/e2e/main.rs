@@ -1,7 +1,9 @@
 mod e2e_tests;
 mod full_snapshot_roundtrip;
+mod java_snapshot_dat_interop;
 mod futures_e2e_tests;
 mod loan_e2e_tests;
 mod liquidation_e2e_tests;
+mod live_cluster_snapshot_interop;
 mod parallel_determinism;
 mod spot_e2e_java_parity_tests;
