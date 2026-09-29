@@ -128,13 +128,15 @@ impl RiskEngine {
         } else if cmd.command == OrderCommandType::ForceLiquidation {
             cmd.result_code = Some(Self::normalize_cmd_position_size(cmd, ups));
         } else if cmd.command == OrderCommandType::IfTakeover {
-            Self::normalize_cmd_position_size(cmd, ups);
+            let norm = Self::normalize_cmd_position_size(cmd, ups);
             let mut ctx = TwoStepContext::new(self, ups, ssp);
-            cmd.result_code = Some(IfCommandProcessor.collect(&mut ctx, cmd));
+            let collected = IfCommandProcessor.collect(&mut ctx, cmd);
+            cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
         } else if cmd.command == OrderCommandType::AutoDeleveraging {
-            Self::normalize_cmd_position_size(cmd, ups);
+            let norm = Self::normalize_cmd_position_size(cmd, ups);
             let mut ctx = TwoStepContext::new(self, ups, ssp);
-            cmd.result_code = Some(AdlCommandProcessor.collect(&mut ctx, cmd));
+            let collected = AdlCommandProcessor.collect(&mut ctx, cmd);
+            cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
         } else if cmd.command == OrderCommandType::LiquidationScan {
             self.check_liquidations(cmd, ups, ssp);
             cmd.result_code = Some(CommandResultCode::Success);
@@ -667,7 +669,8 @@ impl RiskEngine {
                 continue;
             }
             let Some(p_spec) = ssp.get_symbol(p.symbol) else { continue };
-            let p_mark = Self::mark_of(last_price_cache, p.symbol);
+            let Some(p_price) = last_price_cache.get(&p.symbol) else { continue };
+            let p_mark = p_price.mark_price;
             total_pnl += p.estimate_pnl(p_mark);
             total_mm += p.calculate_maintenance_margin(p_spec, p_mark);
         }
@@ -1666,16 +1669,6 @@ impl RiskEngine {
             let removed = risk.remove_position_record(up, position_key, spec, quote_currency_spec);
             if profit != 0 {
                 Self::push_futures_event(fund_events, &risk.last_price_cache, FundEventType::PnlSettlement, event_order_id, &removed, spec, up, ssp);
-            }
-        }
-    }
-
-    pub(crate) fn harvest_into(map: &mut BTreeMap<i32, i64>, adjustments: &mut BTreeMap<i32, i64>, harvested: &mut BTreeMap<i32, i64>) {
-        for (&c, v) in map.iter_mut() {
-            let amount = std::mem::replace(v, 0);
-            if amount != 0 {
-                *adjustments.entry(c).or_insert(0) += amount;
-                *harvested.entry(c).or_insert(0) += amount;
             }
         }
     }

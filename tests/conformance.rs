@@ -34,7 +34,7 @@ impl TradeEventsHandler for ErRecorder {
             snake(&format!("{:?}", r.execution_type)),
             snake(&format!("{:?}", r.order_status)),
             r.account_id, r.order_id, snake(&format!("{:?}", r.side)), if r.is_maker { 1 } else { 0 },
-            r.price, r.last_qty, r.mark_price, r.cumulative_qty, r.cumulative_quote_qty, r.commission, r.commission_asset
+            r.price, r.last_qty, r.last_price, r.cumulative_qty, r.cumulative_quote_qty, r.commission, r.commission_asset
         ));
     }
     fn futures_execution_report(&mut self, r: FuturesExecutionReport) {

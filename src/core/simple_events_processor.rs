@@ -337,7 +337,7 @@ mod tests {
         let taker_trade = trades.iter().find(|r| !r.is_maker).unwrap();
         assert_eq!(taker_trade.account_id, BUYER);
         assert_eq!(taker_trade.last_qty, 10);
-        assert_eq!(taker_trade.mark_price, 100);
+        assert_eq!(taker_trade.last_price, 100);
         assert_eq!(taker_trade.cl_ord_id, 77);
         let maker_trade = trades.iter().find(|r| r.is_maker).unwrap();
         assert_eq!(maker_trade.account_id, SELLER);
@@ -630,7 +630,7 @@ mod tests {
         assert_eq!(r.quote_order_qty, 0);
         assert_eq!(r.order_creation_time, 1578930983745201);
         assert_eq!(r.last_qty, 0);
-        assert_eq!(r.mark_price, 0);
+        assert_eq!(r.last_price, 0);
         assert_eq!(r.cumulative_qty, 100);
         assert_eq!(r.cumulative_quote_qty, 10000);
         assert_eq!(r.commission, 0);
@@ -688,7 +688,7 @@ mod tests {
         assert_eq!(new_order.quote_order_qty, 0);
         assert_eq!(new_order.order_creation_time, 1578930983745201);
         assert_eq!(new_order.last_qty, 0);
-        assert_eq!(new_order.mark_price, 0);
+        assert_eq!(new_order.last_price, 0);
         assert_eq!(new_order.cumulative_qty, 0);
         assert_eq!(new_order.cumulative_quote_qty, 0);
         assert_eq!(new_order.commission, 0);
@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(taker_view.order_creation_time, 1578930983745201);
         assert_eq!(taker_view.trade_id, 789862400);
         assert_eq!(taker_view.last_qty, 8272);
-        assert_eq!(taker_view.mark_price, 20100);
+        assert_eq!(taker_view.last_price, 20100);
         assert_eq!(taker_view.cumulative_qty, 123);
         assert_eq!(taker_view.cumulative_quote_qty, 1000);
         assert_eq!(taker_view.commission, 0);
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(maker_view.order_creation_time, 177777777777);
         assert_eq!(maker_view.trade_id, 789862400);
         assert_eq!(maker_view.last_qty, 8272);
-        assert_eq!(maker_view.mark_price, 20100);
+        assert_eq!(maker_view.last_price, 20100);
         assert_eq!(maker_view.cumulative_qty, 123);
         assert_eq!(maker_view.cumulative_quote_qty, 1000);
         assert_eq!(maker_view.commission, 0);
@@ -849,7 +849,7 @@ mod tests {
         assert_eq!(taker_view.order_creation_time, 1578930983745201);
         assert_eq!(taker_view.trade_id, 53173130196993);
         assert_eq!(taker_view.last_qty, 8273);
-        assert_eq!(taker_view.mark_price, 20101);
+        assert_eq!(taker_view.last_price, 20101);
         assert_eq!(taker_view.cumulative_qty, 124);
         assert_eq!(taker_view.cumulative_quote_qty, 10000);
         assert_eq!(taker_view.commission, 0);
@@ -874,7 +874,7 @@ mod tests {
         assert_eq!(maker_view.order_creation_time, 177777777778);
         assert_eq!(maker_view.trade_id, 53173130196993);
         assert_eq!(maker_view.last_qty, 8273);
-        assert_eq!(maker_view.mark_price, 20101);
+        assert_eq!(maker_view.last_price, 20101);
         assert_eq!(maker_view.cumulative_qty, 223);
         assert_eq!(maker_view.cumulative_quote_qty, 1100);
         assert_eq!(maker_view.commission, 0);
@@ -1000,7 +1000,7 @@ mod tests {
         assert_eq!(new_order.quote_order_qty, 0);
         assert_eq!(new_order.order_creation_time, 1578930983745201);
         assert_eq!(new_order.last_qty, 0);
-        assert_eq!(new_order.mark_price, 0);
+        assert_eq!(new_order.last_price, 0);
         assert_eq!(new_order.cumulative_qty, 0);
         assert_eq!(new_order.cumulative_quote_qty, 0);
         assert_eq!(new_order.commission, 0);
@@ -1024,7 +1024,7 @@ mod tests {
         assert_eq!(reject.quote_order_qty, 0);
         assert_eq!(reject.order_creation_time, 1578930983745201);
         assert_eq!(reject.last_qty, 0);
-        assert_eq!(reject.mark_price, 0);
+        assert_eq!(reject.last_price, 0);
         assert_eq!(reject.cumulative_qty, 0);
         assert_eq!(reject.cumulative_quote_qty, 0);
         assert_eq!(reject.commission, 0);

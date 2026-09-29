@@ -96,6 +96,9 @@ impl ExchangeCore {
             self.reset();
             cmd.result_code = Some(crate::core::common::cmd::command_result_code::CommandResultCode::Success);
             log::debug!("process_command: RESET cleared all engine business state");
+            let seq = self.results_seq;
+            self.results_seq += 1;
+            self.results_consumer.consume(cmd, seq, &self.ssp, &self.ups);
             return;
         }
 

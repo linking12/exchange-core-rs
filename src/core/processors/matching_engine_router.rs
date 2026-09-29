@@ -23,6 +23,10 @@ impl MatchingEngineRouter {
     }
 
     pub fn process_order(&mut self, cmd: &mut OrderCommand) -> CommandResultCode {
+        if cmd.command == OrderCommandType::Nop {
+            cmd.result_code = Some(CommandResultCode::Success);
+            return CommandResultCode::Success;
+        }
         if cmd.command.is_non_trading()
             || (cmd.command.is_loan()
                 && cmd.command != OrderCommandType::LoanForceLiquidate

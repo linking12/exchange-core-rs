@@ -225,7 +225,7 @@ impl LiquidationEngine {
         let equity = position.open_init_margin_sum + profit + position.extra_margin;
         let maintenance_margin = position.calculate_maintenance_margin(spec, mark_price);
         if equity >= maintenance_margin {
-            if maintenance_margin > 0 && equity < maintenance_margin.saturating_mul(12) / 10 {
+            if maintenance_margin > 0 && equity < mul_exact(maintenance_margin, 6) / 5 {
                 return IsolatedCheck::Alert;
             }
             return IsolatedCheck::Healthy;

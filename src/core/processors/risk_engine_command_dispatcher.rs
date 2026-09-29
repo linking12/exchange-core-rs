@@ -156,10 +156,23 @@ impl RiskEngineCommandDispatcher {
     }
 
     fn reset_fee(engine: &mut RiskEngine, cmd: &mut OrderCommand, ssp: &SymbolSpecificationProvider) -> CommandResultCode {
-        let mut harvested: BTreeMap<i32, i64> = BTreeMap::new();
-        RiskEngine::harvest_into(&mut engine.fees, &mut engine.adjustments, &mut harvested);
-        RiskEngine::harvest_into(&mut engine.loan_service.interest_revenue, &mut engine.adjustments, &mut harvested);
-        for (c, amount) in harvested {
+        let mut totals: BTreeMap<i32, i64> = BTreeMap::new();
+        // fees 桶:每个 currency(含零值键)都进 totals(对齐 Java collectInput 无零守卫)
+        for (&c, v) in engine.fees.iter_mut() {
+            let amount = std::mem::replace(v, 0);
+            *engine.adjustments.entry(c).or_insert(0) += amount;
+            *totals.entry(c).or_insert(0) += amount;
+        }
+        // interest_revenue 桶:跳零值(对齐 Java sweepRevenueBucket)
+        for (&c, v) in engine.loan_service.interest_revenue.iter_mut() {
+            let amount = std::mem::replace(v, 0);
+            if amount == 0 {
+                continue;
+            }
+            *engine.adjustments.entry(c).or_insert(0) += amount;
+            *totals.entry(c).or_insert(0) += amount;
+        }
+        for (c, amount) in totals {
             let cur_scale = ssp.get_currency(c).map(|s| s.currency_scale_k).unwrap_or(0);
             let mut ev = FundEvent::spot(FundEventType::ResetFee, SYSTEM_TRIGGERED_ORDER_ID, 0, c, amount, 0);
             ev.currency_scale_k = cur_scale;
