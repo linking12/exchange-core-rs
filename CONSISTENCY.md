@@ -464,6 +464,7 @@ cargo test --test conformance
 **可继续(开放式,非阻塞):**
 
 - Java `tests/unit` 里非数学的行为类单测逐条对拍;更多 loan 子场景向量(注:LIF 注资向量曾试,对当前对拍口径 inert 已移除)。
+- **待复审:每命令 `marketData` 快照移植差异**(2026-09-29,基准对拍时发现)。Java `MatchingEngineRouter.processMatchingCommand`(`MatchingEngineRouter.java:258`)对**每条成功的非 `ORDER_BOOK_REQUEST` 命令**都 `cmd.marketData = getL2MarketDataSnapshot(Integer.MAX_VALUE)`(喂当前周期 R2 风控 + 对外发布);Rust `matching_engine_router.rs::process_order` **只在 `OrderBookRequest` 才 `fill_l2`**,下单/撤单/撮合路径不产 `market_data`。需 port-parity 复审确认:Java R2(`handlerRiskRelease`)或下游消费方是否依赖这份 per-command marketData——若依赖,Rust 侧是有意用别的方式取数(则记入 §6 刻意差异)还是漏接(则补);若不依赖(EXCHANGE 模式,MER 源码 TODO 亦存疑),则确认为 Rust 有意省略的性能优化。仅影响事件/发布层,不影响已对拍的资金/状态终态。见 BENCHMARK.md §5b。
 
 ---
 
