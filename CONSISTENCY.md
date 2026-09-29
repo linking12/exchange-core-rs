@@ -203,6 +203,7 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | **`state_hash`** | Java 自己的 hash | 逐字段折叠、是超集 | 不互比;跨实现用 ③ 的语义状态摘要 |
 | **现货普通 FOK(`OrderType.FOK`)** | **未实现**(`// TODO FOK support`,整单 reject) | 已实现 fill-or-kill | Rust 更完整;差分模糊不随机普通 FOK(`fok_kill` 手写覆盖)。**`FOK_BUDGET`/`IOC_BUDGET` 两侧都实现、已对拍一致** |
 | **`MARKPRICE_ADJUSTMENT` 的 `price<=0`** | 无守卫:置 markPrice=0/负值,返回 SUCCESS(后续期货 place 再因 markPrice 无效被拒) | `price<=0` 直接 `RISK_INVALID_AMOUNT` 拒绝,markPrice 不变 | 刻意:Rust 更严,不接受无意义的非正 mark price(确定性状态机不写坏价);两侧终态资金一致,仅 result code 差 |
+| **`SETTLE_PNL` 缺 currency spec** | `settlePnl` 无 currency-spec 守卫,配置缺失时 NPE | `settle_pnl` 缺 currency spec 返回 `InvalidSymbol` | 刻意:Rust 更健壮(确定性状态机不 panic);仅 symbol spec 存在但 currency spec 缺失(配置错误)时可达,正常不触及 |
 | ~~**`SETTLE_FUNDINGFEES` 的 `size<=0`**~~ **已对齐(2026-09-19)** | ~~无条件覆写为 VALID~~ **已修**:`preProcessCommand` 仅在 collectInput 未设错误码时才放行(保留 `RISK_INVALID_AMOUNT`/`RISK_MARKPRICE_NOT_AVAILABLE`) | 返回 `RISK_INVALID_AMOUNT` | 两侧现一致返回 `RISK_INVALID_AMOUNT`(Java 侧覆写 bug 已修,funding/perp ITs 绿) |
 | **`add_currency` 重复币种** | skip(返回 false,保留原 spec) | 覆写(幂等重放同值无碍) | 结果码两侧都不暴露(batch binary 忽略返回);重复添加同币种的幂等性细微差,非资金/行为可观测 |
 | **`NO_RISK_PROCESSING` 风控短路模式** | `cfgIgnoreRiskProcessing`(`RiskEngine.java:411` placeOrderRiskCheck / `:836` closePositionRiskCheck)置位时短路返回 `VALID_FOR_MATCHING_ENGINE`,跳过余额锁/保证金检查(测试/高频模式) | **刻意不移植**:无此配置,恒走全量风控 | Rust 更严格、绝不放行无锁订单。确定性 Raft 状态机跳过风控会破坏资金完整性,故不移植;正常部署不用该模式,无资金影响(2026-09-19 三路径深审确认) |
@@ -429,8 +430,16 @@ cargo test --test conformance
 
 > **⚠ events-on 期货向量的 golden 必须逐向量隔离生成**(`-Dconformance.vectors.dir=<临时目录,只放一个 .stream>`)。Java exporter 全量跑一次会因**双发(R2 `-seq` + main `+seq`)+ `processed` 去重竞态**间歇性**重复捕获** `OPEN_POSITION` 等生命周期事件(同 [[conformance-exporter-async-flaky]]),污染多重集计数。Rust 单发确定,replay 侧(步骤 2)恒定,故只要**一次**拿到干净 golden 入库,CI 就稳定。隔离批量重生成的做法:对每个 `.stream` 单独设 `-Dconformance.vectors.dir=<只含该向量的临时目录>` 跑一次 exporter,逐一收集干净 golden。
 
+### 维护纪律(防漂移 checklist)
+
+任何**改引擎行为**或**修 Java↔Rust 分歧**时,按序做完:
+1. **两侧同步**:Rust 与 Java 实现一起改;若只改一侧,必在 §6 记为刻意差异(含 why)。
+2. **归一化清单同步**:新差异进 §6;新对齐把对应 §6 行标"已对齐"或移除。
+3. **回归护栏(每个修复/新行为都要有锁定它的东西)**:能进 golden 的 → 加 conformance 向量(§4);进不了 golden 的(仅估值字段、内部索引、result-code 边角等)→ 加 Rust 单测。二者都要验证"**还原修复即红**"(参 §7.11 #1 用向量 `reset_fee_double`、#3 用单测 `futures_estimates_cross_skips_*`)。—— 这是对"③ 覆盖非穷尽"的直接对策:防止已修分歧悄悄回退。
+4. **重生成 + 评审**:`gen_conformance_fuzz(可选) → mvn ConformanceExporter → cargo test --test conformance`;人工评审 golden diff(漂移即行为变了)。
+5. **文档同步**:§1.1 计数、§6/§7、§8 DSL(加 verb 时)一并更新——本仓文档靠人工维护,漂移就会误导。
+
 - **加一个场景** = 写一个 `.stream`(现货/期货/清算/ADL 皆可)→ Java 导出 golden → Rust 对拍。DSL 缺 verb 就两侧解释器各加一条分支。
-- **引擎行为有意变更** → 同步更新两侧实现 + 重新生成 golden + **评审 golden diff**。
 - **门禁建议**:两侧都入 CI。Rust CI 跑 `cargo test`(六个 target:lib / e2e / integration / conformance / orderbook_base_parity / orderbook_diff);Java CI 跑 `ConformanceExporter` 生成的 golden 与入库版本 diff(golden 漂移即 Java 行为变了)。
 
 ---
