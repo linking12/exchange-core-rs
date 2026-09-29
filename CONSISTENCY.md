@@ -77,7 +77,7 @@
 
 **位置**:各生产文件内 `#[cfg(test)] mod java_parity`(或 `parity_*` 测试),与被测函数同文件。
 
-**动机**:① 只走**端到端**公开 API。Java 的 `tests/unit` + `core/**` 有一批**组件级**单测,拿 `assertEquals` 精确钉住取整方向、缩放截断、边界、公式常量——这些点端到端流程未必触达(翻译错了 IT 未必红,但对应单测必红)。Rust 的 856+ lib 单测是**独立**写的,与这些 Java 单测的覆盖是否重合此前无人验证,是最大的"翻译 bug 藏身处"。
+**动机**:① 只走**端到端**公开 API。Java 的 `tests/unit` + `core/**` 有一批**组件级**单测,拿 `assertEquals` 精确钉住取整方向、缩放截断、边界、公式常量——这些点端到端流程未必触达(翻译错了 IT 未必红,但对应单测必红)。Rust 的 1000+ lib 单测是**独立**写的,与这些 Java 单测的覆盖是否重合此前无人验证,是最大的"翻译 bug 藏身处"。
 
 **做法**:把 Java 数学敏感单测的黄金常量**逐条**钉进 Rust 同名/对应函数的 parity 测试。规则:**钉 Java 精确值;若 Rust 算出不同值即候选翻译 bug,绝不改期望值迁就**。
 
@@ -164,7 +164,7 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 **位置**:`examples/gen_conformance_fuzz.rs`。
 
-**做法**:xorshift64 确定性 PRNG(无依赖,固定种子)批量生成随机现货命令流(多用户、GTC+IOC、各类价/量/方向、偶发巨量触发 NSF),写入 `conformance_vectors/`,走 §4 的同一流程。把撮合引擎压满:crossing / partial fill / IOC / NSF / 多档吃单。
+**做法**:xorshift64 确定性 PRNG(无依赖,固定种子)批量生成随机命令流——现货 / 期货 / 清算 / 现货期货混合 / 借贷等多族(见 §11 与 `gen_conformance_fuzz.rs` 头注释),写入 `conformance_vectors/`,走 §4 的同一流程。把撮合引擎压满:crossing / partial fill / IOC / NSF / 多档吃单。
 
 **跑**:`cargo run --example gen_conformance_fuzz`(重生成)→ Java 导出 golden → `cargo test --test conformance`。
 
@@ -363,6 +363,24 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | `POOL_DEPOSIT` | `cur amount txid` | 借贷池注资(分片本地,见 §7.3) | 是 |
 | `LOAN_CREATE` | `uid sym loanId collateral principal rateMode ts txid` | isolated 开贷(锁抵押、放本金) | 是 |
 | `LOAN_REPAY` | `uid loanId repay ts txid` | isolated 还款(还本息、赎抵押) | 是 |
+| `LOAN_ADD_COLLATERAL` | `uid loanId amount ts txid` | isolated 补抵押 | 是 |
+| `LOAN_RELEASE_COLLATERAL` | `uid loanId amount ts txid` | isolated 减抵押(减后 LTV 守卫) | 是 |
+| `LOAN_GLOBAL` | `numeraire crossLiqLtv crossMcLtv poolCap liqFee liqBuf mcBuf` | 借贷全局配置(经 `ADD_LOAN`) | 否(setup) |
+| `LOAN_SYMBOL` | `sym initialLtv liqLtv marginCallLtv maxAmount maxTermDays collateralWeight` | 借贷 per-symbol 配置(经 `ADD_LOAN`) | 否(setup) |
+| `LOAN_CROSS_ADD_COLLATERAL` | `uid cur amount ts txid` | cross 补抵押 | 是 |
+| `LOAN_CROSS_WITHDRAW_COLLATERAL` | `uid cur amount ts txid` | cross 减抵押 | 是 |
+| `LOAN_CROSS_BORROW` | `uid sym loanId principal ts txid` | cross 借币 | 是 |
+| `LOAN_CROSS_REPAY` | `uid loanId repay ts txid` | cross 还款 | 是 |
+| `CLOSE` | `oid uid sym action price size type` | 主动平仓 | 是 |
+| `LEVERAGE` | `uid sym leverage` | 调整杠杆 | 是 |
+| `MARGIN_ADJUST` | `uid sym action amount margin(ISOLATED/CROSS) txid` | 调整逐仓额外保证金 / cross 余额 | 是 |
+| `REPRICE` | `ts` | 触发 loan 利率重定价 | 是 |
+| `RESET_FEE` | `txid` | 扫 fees/利息入 adjustments 并发 `RESET_FEE` | 是 |
+| `TRANSFER` | `from to cur amount txid` | 内部转账(双腿零和) | 是 |
+| `POOL_WITHDRAW` | `cur amount txid` | 借贷池提取 | 是 |
+| `IF_WITHDRAW` | `sym amount txid` | 保险基金提取 | 是 |
+| `LIF_DEPOSIT` | `cur amount txid` | 借贷保险基金(LIF)注资 | 是 |
+| `LIF_WITHDRAW` | `cur amount txid` | 借贷保险基金(LIF)提取 | 是 |
 
 ---
 
