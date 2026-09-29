@@ -194,7 +194,12 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | **异常隔离** | `accept` try/catch 记日志(多线程下坏 handler 不拖垮撮合) | 无 try/catch:`consume` 在 `apply_one` 内同线程调用,handler panic 直接上抛 | 刻意:确定性状态机里 handler 属纯观测层,吞 panic 会掩盖 bug 且威胁 raft 确定性,故 fail-fast |
 | **MOVE 成交后 mover 的 `filledNotional`** | ~~不累计~~ **已修**:`moveOrder` 补 `filledNotional` 累计(§7.6) | 两者都累计(自洽) | 两侧一致;`spot_cancel_reduce_move`(MOVE 成交后 cancel 看 cumQ)对拍作回归护栏,`spot_cancel_after_fill` 对拍正常成交路径 |
 | **`LIQUIDATION_FEE` 事件的 `profit` 字段** | 结算前快照 `position.profit`(如 -300) | 平仓结算已把 profit 归零,fee 事件 `profit=0` | 冗余字段:已实现 PnL 已在 `LIQUIDATION_CLOSE.profit` + `PNL_SETTLEMENT` + 账户体现,fee 事件的 profit 快照不额外比对(`it_mixed` 两个 `*_fully_matched_with_fee` 断言 fee.profit=0) |
-| **`symbol_to_users` 强平索引维护** | 平仓时 eager 摘除(`RiskEngine.removePositionRecord` → `onPositionClosed`) | lazy 清理:下一次针对该 symbol 的 `check_positions` 用 `retain()` 剔除无仓持有人(`on_position_closed` 未接进平仓路径) | 内部性能索引(选扫描候选),非可观测资金/行为态;无仓 uid 两侧都不会被强平,清算结果一致(`it_liquidation` symbol_index 测试验 lazy 模型) |
+| **`symbol_to_users` 强平索引维护** | 平仓时 eager 摘除(`RiskEngine.removePositionRecord` → `onPositionClosed`) | **已对齐 eager**:所有平仓统一经 `RiskEngine::remove_position_record` → `on_position_closed` 摘除;HEDGE 下仅当该 symbol 无其它方向仓位才移除 | 两侧同为 eager 维护、逐行对齐(非差异,列此备查);内部性能索引(选扫描候选),非可观测资金/行为态 |
+| **`BINARY_DATA_QUERY`(码 90)/ binary query·report 路径** | 有 `BINARY_DATA_QUERY`(query,不改态)+ report 拉取 | 未移植:枚举无该变体,`from_code(90)` 直接 panic;仅"混合 Java 集群"才会收到 | §1.1 已知开放项(纯 Rust 集群不产生码 90);混入现有 Java 集群热迁移才需补 |
+| **`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类** | 走主 switch(不在 isNonTrading 集) | 归入 `is_non_trading` → 走 dispatcher | 组织性:Rust 单管线恒跑三阶段(ME 侧同 guard skip)、单分片,终态/结果码等价 |
+| **成交后周期 L2 行情快照自动发布** | `serviceFlags & 1`(GroupingProcessor 每 ~10ms 置位)时挂 `getL2MarketDataSnapshot` | 不自动挂(仅 `ORDER_BOOK_REQUEST` 显式返 L2) | 仅行情 observation,与 grouping/serviceFlags 不移植一致;不影响资金/状态/结果码 |
+| **fund event `uni_id`(exec-id)的 isMaker 位** | taker/maker 两桶共享 `index++`,maker 事件置 isMaker bit0 | 扁平 `cmd.fund_events`,isMaker 位恒 false | 单发塌缩的下游后果(与 ER/ERF 剔除 tid/eid 同口径);fund event 多重集对拍剔除 exec-id,不受影响 |
+| **`place_exchange_order` free-margin 的 `curPosSymbol` 传参** | 传现货 `symbolId`(现货/期货 symbol id 全局不共用,`position.symbol==该 id` 永不成立=死参) | 传 `-1`(恒不计同 id 隔离仓浮盈) | 无:两侧 free-margin 结果恒等 |
 | **`state_hash`** | Java 自己的 hash | 逐字段折叠、是超集 | 不互比;跨实现用 ③ 的语义状态摘要 |
 | **现货普通 FOK(`OrderType.FOK`)** | **未实现**(`// TODO FOK support`,整单 reject) | 已实现 fill-or-kill | Rust 更完整;差分模糊不随机普通 FOK(`fok_kill` 手写覆盖)。**`FOK_BUDGET`/`IOC_BUDGET` 两侧都实现、已对拍一致** |
 | **`MARKPRICE_ADJUSTMENT` 的 `price<=0`** | 无守卫:置 markPrice=0/负值,返回 SUCCESS(后续期货 place 再因 markPrice 无效被拒) | `price<=0` 直接 `RISK_INVALID_AMOUNT` 拒绝,markPrice 不变 | 刻意:Rust 更严,不接受无意义的非正 mark price(确定性状态机不写坏价);两侧终态资金一致,仅 result code 差 |
@@ -312,6 +317,22 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 - **cross-loan LIF-takeover 事件快照时序**(`loan_command_dispatcher.rs` taken_over 分支):原在 `close_and_recycle` **前**发 `LOAN_LIQUIDATED`(principal/interest 非零、LTV 含被吸收 loan);Java 在**后**发、`snapPrincipal=snapInterest=0`、LTV 排除。已改为**先 close 再 push(0,0)**(对齐 Java `LoanCommandDispatcher.java:819-856`)。资金/守恒本就一致,仅 3 个事件字段;非资金。
 - **修 Java `SETTLE_FUNDINGFEES size<=0` 覆写 bug**:`RiskEngine.preProcessCommand` 原无条件把结果覆写成 `VALID_FOR_MATCHING_ENGINE`、掩盖 collectInput 设的 `RISK_INVALID_AMOUNT`;已改为仅未设错误码时才放行 → 两侧现一致返回 `RISK_INVALID_AMOUNT`(funding/perp ITs 绿)。
 - **刻意/记录(不改)**:`MARKPRICE_ADJUSTMENT price<=0`(Rust 更严拒绝)、`add_currency` 重复(skip vs overwrite)——入 §6。`state_hash` 不互比、分片聚合、`symbol_to_users` lazy 均已在 §6。
+
+### 7.11 六子系统并行复审(2026-09-29):无高危,修 7 处 LOW 对齐
+
+对 Java↔Rust 分六域(风控 / 撮合·订单簿 / 清算·ADL·IF / 借贷 / 资金费·交割·转账 / 事件·序列化·二进制命令)并行逐路复审。**资金、状态不变量、结果码主路径、快照字节全部对齐或属 §6 刻意差异**——无高危 / 中危分歧。修复 7 处 LOW:
+
+| # | 位置 | 修复 |
+|---|------|------|
+| 1 | `risk_engine_command_dispatcher.rs::reset_fee` | fees 桶零值键也发 `RESET_FEE(0)`(对齐 Java `sendResetFeeEvent` 无零守卫;interest_revenue 仍跳零);删除现已无用的 `RiskEngine::harvest_into` |
+| 2 | `risk_engine.rs` IF/ADL R1 | 保留 `normalize_cmd_position_size` 的 null-user 返回码(`AuthInvalidUser`),对齐 Java(此前恒 `Success`;实际不可达) |
+| 3 | `risk_engine.rs::futures_estimates` cross 循环 | 缺 mark 价时 `continue` 跳过该仓(对齐 Java),不再以 mark=0 计入 fund event 估值字段 |
+| 4 | `exchange_core.rs::process_command` RESET | RESET 也触发 `results_consumer.consume` 并递增 `results_seq`(对齐 Java 完整发布;seq 入快照) |
+| 5 | `matching_engine_router.rs::process_order` | `NOP` 良性 no-op 返回 `Success`(此前落默认返 `MatchingInvalidOrderBookId`) |
+| 6 | `liquidation_engine.rs` isolated 预警线 | `saturating_mul(12)/10` → `mul_exact(...,6)/5`,与 cross 路径及 Java `multiplyExact(mm,6)/5` 统一 |
+| 7 | `trade_events_handler.rs` `SpotExecutionReport` | 误导字段名 `mark_price` → `last_price`(spot 无 mark price,对齐 Java `lastPrice`;同值改名) |
+
+验证:全量 `cargo test` 全绿(lib 1006 / conformance 192 向量 golden 不变 / e2e 64 / integration 357 / base_parity 78 / diff 9),无需重生成 golden(以上均为既有向量未覆盖的边角或纯改名)。刻意不改并记入 §6 的:`BINARY_DATA_QUERY`(码 90,§1.1 开放项)、`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类、周期 L2 行情、fund `uni_id` isMaker 位、free-margin 死参。
 
 ---
 
