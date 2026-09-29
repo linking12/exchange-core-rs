@@ -1,9 +1,13 @@
-//! 差分模糊:确定性 PRNG 批量生成随机命令流 `.stream`(现货撮合),写入 tests/conformance_vectors/。
+//! 差分模糊:确定性 PRNG(xorshift64,无依赖、固定种子)批量生成随机命令流 `.stream`,写入 tests/conformance_vectors/。
 //! 生成后:Java `mvn -Dtest=ConformanceExporter test` 产 golden → Rust `cargo test --test conformance` 对拍。
-//! 种子固定 → 可复现;向量 + golden 一并入库。跑:`cargo run --example gen_conformance_fuzz`。
+//! 种子固定 → 可复现;向量 + golden 一并入库。
 //!
-//! v1 只随机**现货 PLACE**(多用户单 symbol,各类 order_type/价/量/方向),对拍 result_code + 最终状态。
-//! 无异步/无清算,最稳;已能把撮合引擎(crossing/partial/IOC/FOK/NSF/dup)压得很满。
+//! 覆盖多个随机族:现货撮合(`fuzz_`)、期货(`fut_`)、清算(`liq_`)、现货/期货混合(`mix_`/`fmix_`)、
+//! 永续操作(`perpops_`)、借贷(`loanfz_`)、跨币借贷(`xloan_`)、转账(`xfer_`)、交割(`deliv_`)、资金操作(`fundops_`)等。
+//! 各族用域分隔常量派生独立子流(见 `seeded_rng`),同 seed 也互不相关。
+//!
+//! 跑:`cargo run --example gen_conformance_fuzz`(默认写入库目录、种子=向量序号)。
+//! live-diff 编排另传 `--out <dir> --seed <base>` 写临时目录、以 epoch 作种子基(见 `scripts/conformance_live_diff.sh`)。
 
 use std::fmt::Write as _;
 use std::fs;

@@ -1,3 +1,8 @@
+// 纯引擎吞吐基准:绕开 Raft,直灌 process_command,量单管线引擎本体的命令处理速率。
+// 含:纯下单 / 下单+撤单 / 撮合扫描(深单桶 vs 宽浅桶),以及 ME-only 的 Naive vs Direct 订单簿对照。
+// 不含风控分片 / 异步 / 网络。
+//
+// 跑:cargo bench --bench engine_throughput
 use std::hint::black_box;
 use std::time::Instant;
 
