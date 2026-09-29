@@ -28,11 +28,6 @@ const RATE: i64 = 100;
 const RATE_SCALE_K: i64 = 1_000;
 const OPEN_VOLUME: i64 = 10;
 
-// TOTAL accounts = holders here, to match the Java bench's account count for a fair
-// funding comparison (the real system has far more idle accounts; with Rust's BTreeMap ups
-// that makes ups.get O(log total), which the 20M run showed).
-const HOLDER_COUNTS: &[usize] = &[1_000, 10_000, 100_000];
-
 fn futures_spec() -> CoreSymbolSpecification {
     CoreSymbolSpecification {
         symbol_id: SYMBOL,
