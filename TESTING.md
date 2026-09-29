@@ -75,3 +75,5 @@ Java↔Rust「live 差分」:每次生成新鲜随机命令流,走 gen → Java 
 cargo bench --bench engine_throughput      # 纯引擎吞吐:绕开 Raft 直灌 process_command
 cargo bench --bench parallel_scan_bench    # 单命令停顿:funding/强平在 N 持仓下阻塞单管线的墙钟
 ```
+
+`engine_throughput` 的命令流与测量口径(供 Java 侧同口径复刻对比)见 [BENCHMARK.md](BENCHMARK.md)。
