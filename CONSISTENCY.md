@@ -195,7 +195,7 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | **MOVE 成交后 mover 的 `filledNotional`** | ~~不累计~~ **已修**:`moveOrder` 补 `filledNotional` 累计(§7.6) | 两者都累计(自洽) | 两侧一致;`spot_cancel_reduce_move`(MOVE 成交后 cancel 看 cumQ)对拍作回归护栏,`spot_cancel_after_fill` 对拍正常成交路径 |
 | **`LIQUIDATION_FEE` 事件的 `profit` 字段** | 结算前快照 `position.profit`(如 -300) | 平仓结算已把 profit 归零,fee 事件 `profit=0` | 冗余字段:已实现 PnL 已在 `LIQUIDATION_CLOSE.profit` + `PNL_SETTLEMENT` + 账户体现,fee 事件的 profit 快照不额外比对(`it_mixed` 两个 `*_fully_matched_with_fee` 断言 fee.profit=0) |
 | **`symbol_to_users` 强平索引维护** | 平仓时 eager 摘除(`RiskEngine.removePositionRecord` → `onPositionClosed`) | **已对齐 eager**:所有平仓统一经 `RiskEngine::remove_position_record` → `on_position_closed` 摘除;HEDGE 下仅当该 symbol 无其它方向仓位才移除 | 两侧同为 eager 维护、逐行对齐(非差异,列此备查);内部性能索引(选扫描候选),非可观测资金/行为态 |
-| **`BINARY_DATA_QUERY`(码 90)/ binary query·report 路径** | 有 `BINARY_DATA_QUERY`(query,不改态)+ report 拉取 | 未移植:枚举无该变体,`from_code(90)` 直接 panic;仅"混合 Java 集群"才会收到 | §1.1 已知开放项(纯 Rust 集群不产生码 90);混入现有 Java 集群热迁移才需补 |
+| **binary 命令管线(`BINARY_DATA_QUERY` 码 90 / `BINARY_DATA_COMMAND` 码 91)** | 码 90=query·report 拉取;码 91=R1/ME `acceptBinaryFrame` 执行批量 add currency/symbol/account/loan 返 SUCCESS | 未移植管线:码 90 枚举无变体、`from_code(90)` panic;码 91 能解码但 dispatch 落 `_ => MatchingUnsupportedCommand`、批处理静默丢弃(`BinaryCommandsProcessor` 现仅快照透传) | §1.1 已知开放项(纯 Rust 集群不产生码 90/91——批量 add 走 `ExchangeApi::add_*` 直连 provider、绕开管线);仅混入现有 Java 集群热迁移才需补 decode/dispatch |
 | **`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类** | 走主 switch(不在 isNonTrading 集) | 归入 `is_non_trading` → 走 dispatcher | 组织性:Rust 单管线恒跑三阶段(ME 侧同 guard skip)、单分片,终态/结果码等价 |
 | **成交后周期 L2 行情快照自动发布** | `serviceFlags & 1`(GroupingProcessor 每 ~10ms 置位)时挂 `getL2MarketDataSnapshot` | 不自动挂(仅 `ORDER_BOOK_REQUEST` 显式返 L2) | 仅行情 observation,与 grouping/serviceFlags 不移植一致;不影响资金/状态/结果码 |
 | **fund event `uni_id`(exec-id)的 isMaker 位** | taker/maker 两桶共享 `index++`,maker 事件置 isMaker bit0 | 扁平 `cmd.fund_events`,isMaker 位恒 false | 单发塌缩的下游后果(与 ER/ERF 剔除 tid/eid 同口径);fund event 多重集对拍剔除 exec-id,不受影响 |
@@ -334,7 +334,11 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 **回归覆盖**:#1 加 conformance 向量 `reset_fee_double`(二次扫费,Java golden 含 `RESET_FEE(0)` 零值键事件,Rust 对拍锁定);#3 conformance 的 `FE` 行不比估值字段(只比 type/uid/cur/free/locked),故用 Rust 单测 `futures_estimates_cross_skips_position_with_missing_mark` 锁(已验证:还原修复即 FAIL)。其余修复(纯改名 / 不可达分支 / RESET seq)由既有全量测试覆盖。
 
-验证:全量 `cargo test` 全绿(lib **1007** / conformance **193 向量** / e2e 64 / integration 357 / base_parity 78 / diff 9)。刻意不改并记入 §6 的:`BINARY_DATA_QUERY`(码 90,§1.1 开放项)、`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类、周期 L2 行情、fund `uni_id` isMaker 位、free-margin 死参。
+验证:全量 `cargo test` 全绿(lib **1007** / conformance **193 向量** / e2e 64 / integration 357 / base_parity 78 / diff 9)。刻意不改并记入 §6 的:binary 命令管线(码 90/91,§1.1 开放项)、`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类、周期 L2 行情、fund `uni_id` isMaker 位、free-margin 死参。
+
+### 7.12 第二轮全面复审(2026-09-29):三横切面无新缺口
+
+换视角再审(避免与 §7.11 重复):**① 算术/scale/取整** 逐函数核对 `CoreArithmeticUtils` 及所有 money 路径(费/保证金/破产·清算价/funding 余数/loan 利息·LTV·抵押/PnL scale)——ceil/trunc 方向与 i128 中间量、scale 换算方向全对齐,**CLEAN**。**② result-code 校验顺序** 逐命令核对 R1 守卫序与返回码(place/close/balance/margin/leverage/funding/loan 全家的 `>` vs `>=` 边界、tryClaim/NSF/AUTH 次序、幂等锚)——**基本 CLEAN**,唯一新发现是 binary `BINARY_DATA_COMMAND`(码 91)管线静默丢批处理,属 §1.1 已知开放项(已补进 §6 表)。**③ 遗留未验项** 核实 `getLeverage`(Java 纯 Lombok 字段、归一在写侧,两侧同→CLEAN)、快照 bid 侧写序(逐字节比对 `chain_snapshot(best_bid)` 沿 prev + Order 写序 = Java `bidOrdersStream`→CLEAN);本会话 §7.11 的 7 处改动逐条复查确认更对齐 Java 且无副作用。informational:IF/ADL 的 normalize/collect 先后(结果码一致,§6 域内)、`SETTLE_PNL` 多一道 currency-spec 守卫(Rust 更健壮、Java 会 NPE)。**结论:无新增资金/状态/结果码分歧。**
 
 ---
 
