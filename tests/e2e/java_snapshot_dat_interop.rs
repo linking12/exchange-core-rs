@@ -6,7 +6,7 @@ use exchange_core_rs::core::processors::risk_engine::read_risk_engine_payload;
 use exchange_core_rs::core::snapshot::chronicle_reader::ChronicleReader;
 use exchange_core_rs::core::snapshot::marshalling::ChronicleMarshallable;
 
-const FIXTURE_DIR: &str = "/tmp/rust_snapshot_dat_fixture";
+const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshot_fixtures");
 
 const USD: i32 = 1;
 const USDT: i32 = 2;
@@ -59,11 +59,11 @@ fn restore_non_replicated_state(core: &mut ExchangeCore) {
 fn recover_from_java_dat() -> ExchangeCore {
     let mut core = ExchangeCore::new();
 
-    let re_payload = load_payload("snapshot_88888_RE_0.dat");
+    let re_payload = load_payload("rich_re0.dat");
     read_risk_engine_payload(&re_payload, &mut core)
         .expect("Java RiskEngine .dat payload must parse with the Rust RE parser");
 
-    let me_payload = load_payload("snapshot_88888_ME_0.dat");
+    let me_payload = load_payload("rich_me0.dat");
     core.matching = MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me_payload))
         .expect("Java MatchingEngineRouter .dat payload must parse with the Rust ME parser");
 
@@ -73,7 +73,7 @@ fn recover_from_java_dat() -> ExchangeCore {
 
 #[test]
 fn java_risk_engine_dat_payload_parses_with_rust_parser() {
-    let re_payload = load_payload("snapshot_88888_RE_0.dat");
+    let re_payload = load_payload("rich_re0.dat");
     let mut core = ExchangeCore::new();
     let result = read_risk_engine_payload(&re_payload, &mut core);
     assert!(result.is_ok(), "RE parser returned error: {:?}", result.err());
@@ -81,7 +81,7 @@ fn java_risk_engine_dat_payload_parses_with_rust_parser() {
 
 #[test]
 fn java_matching_engine_dat_payload_parses_with_rust_parser() {
-    let me_payload = load_payload("snapshot_88888_ME_0.dat");
+    let me_payload = load_payload("rich_me0.dat");
     let result = MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me_payload));
     assert!(result.is_ok(), "ME parser returned error: {:?}", result.err());
 }
