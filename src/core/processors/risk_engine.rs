@@ -4262,6 +4262,79 @@ mod tests {
         );
     }
 
+    #[test]
+    fn futures_estimates_cross_skips_position_with_missing_mark() {
+        // ③(§7.11):CROSS 估值聚合对缺 mark 价的仓位应跳过(对齐 Java posPriceRecord==null continue),
+        // 不得以 mark=0 计入。加一个缺价的 CROSS 仓不应改变估值结果;改前会以 mark=0 计入而改变。
+        const Q: i32 = 2;
+        const BASE: i32 = 1;
+        const S1: i32 = 100;
+        const S2: i32 = 200;
+        const U: i64 = 1;
+
+        fn fut(symbol_id: i32) -> CoreSymbolSpecification {
+            let mut mm = BTreeMap::new();
+            mm.insert(i64::MAX, 500);
+            CoreSymbolSpecification {
+                symbol_id,
+                symbol_type: SymbolType::FuturesContractPerpetual,
+                base_currency: BASE,
+                quote_currency: Q,
+                base_scale_k: 1,
+                quote_scale_k: 1,
+                maintenance_margin: mm,
+                maintenance_margin_scale_k: 10_000,
+                ..Default::default()
+            }
+        }
+        let mut ssp = SymbolSpecificationProvider::new();
+        ssp.add_currency(CoreCurrencySpecification { currency: Q, currency_scale_k: 1, ..Default::default() });
+        ssp.add_currency(CoreCurrencySpecification { currency: BASE, currency_scale_k: 1, ..Default::default() });
+        ssp.add_symbol(fut(S1));
+        ssp.add_symbol(fut(S2));
+        let s1_spec = ssp.get_symbol(S1).unwrap().clone();
+
+        let mut cache = BTreeMap::new();
+        cache.insert(S1, LastPriceCacheRecord::with_mark(100));
+        // S2 刻意缺失 mark
+
+        fn make_pos(symbol: i32) -> SymbolPositionRecord {
+            let mut p = SymbolPositionRecord::new(U, symbol, Q, MarginMode::Cross, 1);
+            p.direction = PositionDirection::Long;
+            p.open_volume = 5;
+            p.open_price_sum = 500;
+            p.open_init_margin_sum = 500;
+            p
+        }
+
+        // Case B:仅 S1
+        let mut ups_b = UserProfileService::new();
+        ups_b.add_empty_user_profile(U);
+        {
+            let up = ups_b.get_mut(U).unwrap();
+            up.add_to_account(Q, 10_000);
+            up.positions.insert(S1, make_pos(S1));
+        }
+        let up_b = ups_b.get(U).unwrap();
+        let pos_b = up_b.positions.get(&S1).unwrap().clone();
+        let est_b = RiskEngine::futures_estimates(&cache, up_b, &pos_b, &s1_spec, &ssp);
+
+        // Case A:S1 + 缺价的 S2
+        let mut ups_a = UserProfileService::new();
+        ups_a.add_empty_user_profile(U);
+        {
+            let up = ups_a.get_mut(U).unwrap();
+            up.add_to_account(Q, 10_000);
+            up.positions.insert(S1, make_pos(S1));
+            up.positions.insert(S2, make_pos(S2));
+        }
+        let up_a = ups_a.get(U).unwrap();
+        let pos_a = up_a.positions.get(&S1).unwrap().clone();
+        let est_a = RiskEngine::futures_estimates(&cache, up_a, &pos_a, &s1_spec, &ssp);
+
+        assert_eq!(est_a, est_b, "缺 mark 价的 CROSS 仓 S2 应被跳过,不改变 S1 的估值(upnl/liq/mr/mmsk)");
+    }
+
     const JP_BTC: i32 = 1;
     const JP_USDT: i32 = 2;
     const JP_ETH: i32 = 3;

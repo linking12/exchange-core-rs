@@ -332,7 +332,9 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | 6 | `liquidation_engine.rs` isolated 预警线 | `saturating_mul(12)/10` → `mul_exact(...,6)/5`,与 cross 路径及 Java `multiplyExact(mm,6)/5` 统一 |
 | 7 | `trade_events_handler.rs` `SpotExecutionReport` | 误导字段名 `mark_price` → `last_price`(spot 无 mark price,对齐 Java `lastPrice`;同值改名) |
 
-验证:全量 `cargo test` 全绿(lib 1006 / conformance 192 向量 golden 不变 / e2e 64 / integration 357 / base_parity 78 / diff 9),无需重生成 golden(以上均为既有向量未覆盖的边角或纯改名)。刻意不改并记入 §6 的:`BINARY_DATA_QUERY`(码 90,§1.1 开放项)、`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类、周期 L2 行情、fund `uni_id` isMaker 位、free-margin 死参。
+**回归覆盖**:#1 加 conformance 向量 `reset_fee_double`(二次扫费,Java golden 含 `RESET_FEE(0)` 零值键事件,Rust 对拍锁定);#3 conformance 的 `FE` 行不比估值字段(只比 type/uid/cur/free/locked),故用 Rust 单测 `futures_estimates_cross_skips_position_with_missing_mark` 锁(已验证:还原修复即 FAIL)。其余修复(纯改名 / 不可达分支 / RESET seq)由既有全量测试覆盖。
+
+验证:全量 `cargo test` 全绿(lib **1007** / conformance **193 向量** / e2e 64 / integration 357 / base_parity 78 / diff 9)。刻意不改并记入 §6 的:`BINARY_DATA_QUERY`(码 90,§1.1 开放项)、`SETTLE_PNL`/`SYSTEM_LIQUIDATION_NOTIFY` 路由分类、周期 L2 行情、fund `uni_id` isMaker 位、free-margin 死参。
 
 ---
 
