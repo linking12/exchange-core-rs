@@ -166,6 +166,42 @@ cleanly.
 
 ---
 
+## Consensus models: Raft & BFT (on-chain execution layer)
+
+The engine is **consensus-agnostic**: it is a deterministic state machine driven by a *totally ordered
+command log*. Anything that produces that total order can drive it — the engine only requires that
+every node applies the same commands in the same order and reaches byte-for-byte identical state
+(guaranteed by single-threaded apply, integer-only arithmetic, and deterministic snapshots).
+
+**Raft (current).** `raft-exchange` runs the engine behind JRaft. Raft is **crash-fault-tolerant (CFT)**
+and assumes a **permissioned, trusted** validator set (single operator or consortium). This is the
+supported deployment today: a replicated, highly-available exchange whose nodes trust each other.
+
+**BFT (public-chain execution layer).** Because the hard part — a deterministic, integer-only,
+log-driven state machine with snapshots — is already in place, the same engine can serve as the
+**execution layer of a public chain**, the role [HyperCore](https://hyperliquid.gitbook.io/) plays on
+Hyperliquid: replace Raft with a **Byzantine-fault-tolerant (BFT)** consensus (HotStuff / CometBFT /
+Malachite-class), since public-chain validators are untrusted. The engine slots in unchanged as the
+state-transition function; the delta is the chain-specific shell around it.
+
+What a public-chain deployment still needs to add (most is *outside* the engine):
+
+| Item | Where | Priority |
+|------|-------|----------|
+| BFT consensus + mempool + p2p (replaces Raft) | external | P0 |
+| State commitment / `state_root` per block (start: hash the snapshot; later: Merkle-ized authenticated state for light-client proofs) | **engine-internal** | P0 (root) / P1 (proofs) |
+| Decentralized oracle (validator-submitted median mark price / funding → `MARKPRICE_ADJUSTMENT`) | external + glue | P0 |
+| Per-block liquidation trigger as a deterministic system tx (`LIQUIDATION_SCAN`) | glue | P0 |
+| Account signatures + token custody bridge (deposit/withdraw ↔ on-chain assets) | external + glue | P0 |
+| Gas / metering & DoS caps (matching cost scales with book depth swept) | **engine-internal** | P0 (caps) / P1 (gas) |
+| Deterministic parallelism (run the scan pool serially under consensus, or prove determinism) | engine-internal (config) | P1 |
+
+Only a few items touch engine internals — chiefly **state commitment**; determinism, integer math and
+snapshots (the properties that are usually hardest to retrofit) already hold. See
+[`CONSISTENCY.md`](CONSISTENCY.md) for the determinism guarantees this relies on.
+
+---
+
 ## Architecture
 
 ### Deterministic pipeline
