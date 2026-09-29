@@ -43,9 +43,9 @@
 - ③ 用 **Java 引擎的实际输出**当 oracle,补上 ① 的 oracle 盲区(清算/ADL 的最终状态现在能逐值对拍)、并让两侧入 CI 抗漂移。
 - ③b 在 ③ 之上用随机流把输入空间压满。
 
-### 1.1 完成状态(2026-09-19)
+### 1.1 完成状态(计数截至 2026-09-29)
 
-**作为独立的确定性撮合引擎(单节点 / 纯 Rust raft 集群),Rust 端口已达可上线级完成度、与 Java 撮合语义对齐。** 撮合 + 风控 + 结算全域(现货 / 期货隔离·全仓·HEDGE / 清算·ADL·IF / funding / loan 隔离·cross / 交割)经**逐行深审 + 五道防线**验证:交易资金三路径逐行零分歧;报表 / 校验 / 两步 apply 三层新对比基本零分歧;① IT 翻译 357 + ①b 组件 78 + ② 守恒 proptest(含 funding/HEDGE/cross)+ ③ 黄金向量 **89**(全 27 类 `FundEventType` 逐事件 + 14 个 `#!match=on` 的 ER/ERF)+ ③b 差分模糊,全绿(lib 993)。快照 Chronicle 读写与 Java 双向逐字节对齐。历次抓到并修的真分歧见 §7。
+**作为独立的确定性撮合引擎(单节点 / 纯 Rust raft 集群),Rust 端口已达可上线级完成度、与 Java 撮合语义对齐。** 撮合 + 风控 + 结算全域(现货 / 期货隔离·全仓·HEDGE / 清算·ADL·IF / funding / loan 隔离·cross / 交割)经**逐行深审 + 五道防线**验证:交易资金三路径逐行零分歧;报表 / 校验 / 两步 apply 三层新对比基本零分歧;① IT 翻译(`integration` 357)+ ①b 组件/订单簿基线对拍(`orderbook_base_parity` 78 + 各生产文件内数学 parity 单测)+ ② 守恒 proptest(含 funding/HEDGE/cross,在 `e2e` 64)+ ③ 黄金向量对拍(`conformance_vectors/` **192** 条 .stream,全 27 类 `FundEventType` 逐事件 + `#!match=on` 的 ER/ERF)+ ③b 差分模糊,全绿(lib **1006**)。快照 Chronicle 读写与 Java 双向逐字节对齐。各测试目标与运行命令见 [TESTING.md](TESTING.md);历次抓到并修的真分歧见 §7(其中带日期的计数为当时快照)。
 
 **刻意不移植**(单线程确定性状态机下 N/A,非缺口):Disruptor 多分片 / 异步提交层 / `groupingControl` / `NO_RISK_PROCESSING` / journaling(log 即 raft)——见 §6。
 
@@ -181,8 +181,8 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 | 差异 | Java | Rust | 处理 |
 |------|------|------|------|
 | **并发/分片** | Disruptor 多处理器 + RiskEngine 按 `uid & shardMask` 多实例分片 | 单线程确定性单管线、单分片(`shardMask=0`) | 状态经报表聚合后分片无关,可比;事件用全流多重集 |
-| **强平触发 / 周期兜底扫** | on-lane(markprice/funding apply 即 targeted 检测)**+** 定时线程周期发 `LIQUIDATION_SCAN` 全量兜底(`LiquidationScheduledService`,默认 2s) | on-lane 同 Java;周期兜底**发令逻辑**在 `scheduler.rs::run_one_iteration`,产出的 `LIQUIDATION_SCAN`/`REPRICE_LOAN_RATES` 经 `LiquidationScheduler.command_submitter` 回调出口(= Java `LiquidationCommandSubmitter`,与 cascade 同一 sink);**墙钟由外层驱动**(库内不含线程/定时器,便于单测),scheduler 不再由 `ExchangeCore` 持有 | 主触发两侧相同=on-lane;周期兜底扫两侧都有,scan 与 FORCE/IF/ADL 走同一回调出口。事件用全流多重集比,不比逐命令归属 |
-| **清算命令提交 / 级联执行模型** | `LiquidationEngine`(继承 `LiquidationScheduledService`)持 `commandSubmitter` 回调,生成的 **scan/FORCE/IF/ADL** 调 `submit(cmd)` → `ExchangeCore.setCommandSubmitter` 注入的 `api.submitCommand`:无 raft 直接进 ring buffer、有 raft **经共识后**回流 apply | **回调模型对齐 Java**:`LiquidationEngine`/`LoanLiquidationEngine`/`LiquidationScheduler` 各持 `command_submitter` 回调(Rust `Box<dyn FnMut(OrderCommand)>`);`ExchangeCore::new` 把它注册成"塞进 `ExchangeCore.pending_commands: Rc<RefCell<Vec>>`"(= Java 单节点 ring buffer)。**单节点**=`process_command` 处理完主命令后 inline 自驱 `pending_commands`(逐条再走 R1→ME→R2 直到清空);**集群**=回调改注册成 raft 提交 → `pending` 恒空、驱动循环 no-op,`take_pending_commands` 交外层过共识、提交后逐条回流各自一次 `process_command`。leader-gated 生成不变 | 提交模型两侧已对齐(回调出口,覆盖 scan/FORCE/IF/ADL)。**单节点**驱动序与 **集群** 共识序不同(前者会把 ADL origin 完全消耗后再跑其 stale ADL);但 R1 夹位 `normalizeCmdPositionSize`↔`normalize_cmd_position_size` **两侧逐字节一致**(`min(cmd.size, openVolume)`,`null`/`None` 分支都 `cmd.size=0`),故任何顺序都不造钱,终态一致(见 §7.5)。**raft submitter 实际实现(jraft/aeron)在外层 server,不在本 crate**;库内提供回调出口 + 单测分流(`cluster_mode_hands_cascade_*` / `cluster_mode_cascade_completes_across_rounds_*`)。逐命令结果经 `ExchangeCore.results_consumer`(= Java `resultsConsumer`,`SimpleEventsProcessor` 可挂其上)触发,不再有引擎侧 `last_cascade_events` 聚合。命令 byte 码 `LIQUIDATION_SCAN` 两侧现均=44(Java 原 64 与 `LOAN_IF_DEPOSIT` 撞码,已改,便于上 raft 按码序列化) |
+| **强平触发 / 周期兜底扫** | on-lane(markprice/funding apply 即 targeted 检测)**+** 定时线程周期发 `LIQUIDATION_SCAN` 全量兜底(`LiquidationScheduledService`,默认 2s) | on-lane 同 Java;周期兜底**发令逻辑**折入 `LiquidationEngine::run_one_iteration`(对齐 Java `LiquidationEngine extends LiquidationScheduledService`——调度与引擎是同一对象;Rust 无继承,用组合把调度状态 `scan_tick`/`scan_slice_count`/`reprice_every_n_ticks`/`shard_id` 并入 `LiquidationEngine`,不再有独立 `LiquidationScheduler`/`scheduler.rs`),产出的 `LIQUIDATION_SCAN`/`REPRICE_LOAN_RATES` 经 `LiquidationEngine` 自身的 `command_submitter` 回调出口(= Java `LiquidationCommandSubmitter`,与 cascade 同一 sink);**墙钟由外层驱动**(库内不含线程/定时器,便于单测),`ExchangeCore::{start,stop,tick}_liquidation_scheduler` 路由到 `risk.liquidation_engine` | 主触发两侧相同=on-lane;周期兜底扫两侧都有,scan 与 FORCE/IF/ADL 走同一回调出口。事件用全流多重集比,不比逐命令归属 |
+| **清算命令提交 / 级联执行模型** | `LiquidationEngine`(继承 `LiquidationScheduledService`)持 `commandSubmitter` 回调,生成的 **scan/FORCE/IF/ADL** 调 `submit(cmd)` → `ExchangeCore.setCommandSubmitter` 注入的 `api.submitCommand`:无 raft 直接进 ring buffer、有 raft **经共识后**回流 apply | **回调模型对齐 Java**:`LiquidationEngine`(已含调度)/`LoanLiquidationEngine` 各持 `command_submitter` 回调(Rust `Box<dyn FnMut(OrderCommand)>`);`ExchangeCore::new` 把它注册成"塞进 `ExchangeCore.pending_commands: Rc<RefCell<Vec>>`"(= Java 单节点 ring buffer)。**单节点**=`process_command` 处理完主命令后 inline 自驱 `pending_commands`(逐条再走 R1→ME→R2 直到清空);**集群**=回调改注册成 raft 提交 → `pending` 恒空、驱动循环 no-op,`take_pending_commands` 交外层过共识、提交后逐条回流各自一次 `process_command`。leader-gated 生成不变 | 提交模型两侧已对齐(回调出口,覆盖 scan/FORCE/IF/ADL)。**单节点**驱动序与 **集群** 共识序不同(前者会把 ADL origin 完全消耗后再跑其 stale ADL);但 R1 夹位 `normalizeCmdPositionSize`↔`normalize_cmd_position_size` **两侧逐字节一致**(`min(cmd.size, openVolume)`,`null`/`None` 分支都 `cmd.size=0`),故任何顺序都不造钱,终态一致(见 §7.5)。**raft submitter 实际实现(jraft/aeron)在外层 server,不在本 crate**;库内提供回调出口 + 单测分流(`cluster_mode_hands_cascade_*` / `cluster_mode_cascade_completes_across_rounds_*`)。逐命令结果经 `ExchangeCore.results_consumer`(= Java `resultsConsumer`,`SimpleEventsProcessor` 可挂其上)触发,不再有引擎侧 `last_cascade_events` 聚合。命令 byte 码 `LIQUIDATION_SCAN` 两侧现均=44(Java 原 64 与 `LOAN_IF_DEPOSIT` 撞码,已改,便于上 raft 按码序列化) |
 | **`MARGIN_ALERT`/`LIQUIDATION_ALERT`/`LOAN_MARGIN_CALL`(逐仓风险告警)** | 引擎内随 markprice/scan 发 | Rust 同样发(`liquidation_engine`/`loan_liquidation_engine`) | **全部已进 ③ 逐事件对拍**:`LIQUIDATION_ALERT`(8 向量)、`MARGIN_ALERT`(`margin_alert_isolated`/`margin_alert_cross`,告警带 mm≤equity<mm*6/5)、`LOAN_MARGIN_CALL`(`loan_margin_call`,marginCallLtv≤LTV<liqLtv)。⚠ 告警**非幂等**(每次扫描重发),向量用**单次 `MARK_AT` 触发、不加 `SCAN`** 避免重复。注:此为**逐仓位风险告警**,与"池子水位告警走外部拉报表"(`pool-monitoring-external`)是两回事 |
 | **仓位生命周期事件** `OPEN_POSITION`/`CLOSE_POSITION` | 每笔成交 taker/maker 各自按"本仓开/增→OPEN、平→CLOSE"发(guard `sizeToOpen>0`/`closedSize>0`) | 规则逐行相同(`settle_margin_position_event`,同 guard) | **已进 ③ 逐事件对拍**(2026-09-19):两侧发射规则经代码深审确认完全一致,168 条 OPEN + 21 条 CLOSE 逐值对拍。⚠ golden **必须隔离(单向量)生成**——Java exporter 全量生成会因双发(R2+main)`processed` 去重竞态重复捕获(见 §10/[[conformance-exporter-async-flaky]]);Rust 单发确定无此问题 |
 | **spot 锁事件** `Locked`/`Unlocked` | place 发 Locked;cancel/reduce/reject(`release>0`)、trade 超额退款(`quoteRefund>0`)发 Unlocked | 规则已对齐 Java(2026-09-19 修 3 处发射:sell handler maker 退款 Unlocked、buy handler taker 退款 Unlocked、reject 加 `release>0` 守卫,见 §7.8) | **已进 ③ 逐事件对拍**;金额中性(只补/收敛报告事件,账户/lock 算术不变) |
@@ -382,11 +382,11 @@ mvn -q -Dtest=ConformanceExporter -DfailIfNoTests=false test
 cargo test --test conformance
 ```
 
-> **⚠ events-on 期货向量的 golden 必须逐向量隔离生成**(`-Dconformance.vectors.dir=<临时目录,只放一个 .stream>`)。Java exporter 全量跑一次会因**双发(R2 `-seq` + main `+seq`)+ `processed` 去重竞态**间歇性**重复捕获** `OPEN_POSITION` 等生命周期事件(同 [[conformance-exporter-async-flaky]]),污染多重集计数。Rust 单发确定,replay 侧(步骤 2)恒定,故只要**一次**拿到干净 golden 入库,CI 就稳定。隔离批量重生成脚本见 `scratchpad/regen_futures_isolated.sh` 思路(每向量单独 `conformance.vectors.dir`)。
+> **⚠ events-on 期货向量的 golden 必须逐向量隔离生成**(`-Dconformance.vectors.dir=<临时目录,只放一个 .stream>`)。Java exporter 全量跑一次会因**双发(R2 `-seq` + main `+seq`)+ `processed` 去重竞态**间歇性**重复捕获** `OPEN_POSITION` 等生命周期事件(同 [[conformance-exporter-async-flaky]]),污染多重集计数。Rust 单发确定,replay 侧(步骤 2)恒定,故只要**一次**拿到干净 golden 入库,CI 就稳定。隔离批量重生成的做法:对每个 `.stream` 单独设 `-Dconformance.vectors.dir=<只含该向量的临时目录>` 跑一次 exporter,逐一收集干净 golden。
 
 - **加一个场景** = 写一个 `.stream`(现货/期货/清算/ADL 皆可)→ Java 导出 golden → Rust 对拍。DSL 缺 verb 就两侧解释器各加一条分支。
 - **引擎行为有意变更** → 同步更新两侧实现 + 重新生成 golden + **评审 golden diff**。
-- **门禁建议**:两侧都入 CI。Rust CI 跑 `cargo test`(五个 target:lib / e2e / integration / orderbook_diff / conformance);Java CI 跑 `ConformanceExporter` 生成的 golden 与入库版本 diff(golden 漂移即 Java 行为变了)。
+- **门禁建议**:两侧都入 CI。Rust CI 跑 `cargo test`(六个 target:lib / e2e / integration / conformance / orderbook_base_parity / orderbook_diff);Java CI 跑 `ConformanceExporter` 生成的 golden 与入库版本 diff(golden 漂移即 Java 行为变了)。
 
 ---
 
@@ -396,7 +396,7 @@ cargo test --test conformance
 
 - ✅ **①b 组件对拍**:`OrderBookBaseTest`(78)/`OrdersBucketNaiveTest`(6)/`SimpleEventsProcessorTest`(7) 已全部 `java_` 前缀逐条对拍,外加 8 个数学敏感单测。
 - ✅ **清算/ADL 事件级对拍**:确定性(SCAN 驱动)向量已 events-on——修了 Java `ConformanceExporter` 的异步捕获(`feAccum` synchronizedList + 稳定判据),`adl`/`liquidation_isolated`/`loan_liquidation_isolated` 均事件级对拍。
-- ✅ **差分模糊扩面**:`gen_conformance_fuzz` 已含现货(`gen_vector`)/期货(`gen_futures_vector`)/清算(`gen_liquidation_vector`)三条随机流 + 离线 live-diff 编排(`conformance_live_diff.sh`)。
+- ✅ **差分模糊扩面**:`gen_conformance_fuzz` 已含现货(`gen_vector`)/期货(`gen_futures_vector`)/清算(`gen_liquidation_vector`)三条随机流 + 离线 live-diff 编排(`scripts/conformance_live_diff.sh`)。
 - ✅ **③ 向量扩面**:现货/期货/交割/清算/ADL/funding/loan/cross/hedge/if_takeover/loan_liquidation/cross_loan 均入库对拍。
 - ✅ **match event 进 ③**(2026-09-18):`SimpleEventsProcessor` 接进对拍框架,fund event + match event 从同一出口流出;同步向量 opt-in `#!match=on` 逐字段对拍 `SpotExecutionReport`/`FuturesExecutionReport`。6 个向量:`spot_match_events`(NEW/TRADE/REJECT)、`fut_match_events`(NEW/TRADE/posSide/cp/avgPx)、`spot_cancel_reduce_move`(REDUCE/MOVE→TRADE/CANCEL)、`spot_cancel_after_fill`、`spot_multi_maker_match`(多笔 TRADE 顺序)、`fut_cancel_reduce_match`(期货 REDUCE/CANCEL)。新增 `CANCEL`/`REDUCE`/`MOVE`(现货)DSL verb。**抓到并修复** Java MOVE `filledNotional` quirk(§7.6,全量 Java 套件绿)。异步清算向量刻意不开(见 §6/[[conformance-exporter-async-flaky]])。
 
@@ -412,14 +412,15 @@ cargo test --test conformance
 
 ---
 
-## 附:测试布局速查
+## 附:防线 → 测试目标 映射
 
-| 位置 | 内容 | 跑 |
-|------|------|----|
-| `src/**` 内 `#[cfg(test)]` | 与生产代码同文件的单元测试 | `cargo test --lib` |
-| `tests/e2e/` | 引擎级 e2e + 守恒 proptest(防线②) | `cargo test --test e2e` |
-| `tests/integration/` | Java IT 对拍(防线①) | `cargo test --test integration` |
-| `tests/conformance.rs` + `tests/conformance_vectors/` | 黄金向量对拍(防线③/③b) | `cargo test --test conformance` |
-| `tests/orderbook_diff.rs` | Direct vs Naive 订单簿差分 | `cargo test --test orderbook_diff` |
-| `examples/gen_conformance_fuzz.rs` | 差分模糊向量生成器 | `cargo run --example gen_conformance_fuzz` |
-| `exchange-core/.../conformance/ConformanceExporter.java` | Java oracle 导出器 | `mvn -Dtest=ConformanceExporter test` |
+| 防线 | 测试目标 | 位置 |
+|------|---------|------|
+| ① IT 翻译 | `cargo test --test integration` | `tests/integration/it_*.rs` |
+| ①b 组件/单元 parity | `cargo test --lib` + `cargo test --test orderbook_base_parity` | 各生产文件内 `#[cfg(test)]` parity 测试 / `tests/orderbook_base_parity.rs` |
+| ② 守恒 proptest | `cargo test --test e2e` | `tests/e2e/*` |
+| ③ 黄金向量对拍 | `cargo test --test conformance` | `tests/conformance.rs` + `tests/conformance_vectors/` |
+| ③b 差分模糊(生成) | `cargo run --example gen_conformance_fuzz` → 见 §10 | `examples/gen_conformance_fuzz.rs` |
+| ③ oracle 导出(Java) | `mvn -Dtest=ConformanceExporter test` | `exchange-core/.../conformance/ConformanceExporter.java` |
+
+> 完整测试布局、运行命令、fixture 来源与脚本说明见 [TESTING.md](TESTING.md)。
