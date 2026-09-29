@@ -3,11 +3,11 @@
 # 走 gen → Java 导出 golden → Rust replay 对拍 的完整流水线,一条命令跑完。
 # 覆盖远超入库向量;用 epoch 作种子基,每次不同。JNI live-diff 的务实替代(见 CONSISTENCY.md §11)。
 #
-# 用法: ./conformance_live_diff.sh [seed_base]   # 省略则用当前 epoch 秒
-# 前置: 已能 cargo / mvn;从 exchange-core-rs 目录运行。
+# 用法: ./scripts/conformance_live_diff.sh [seed_base]   # 省略则用当前 epoch 秒
+# 前置: 已能 cargo / mvn。可从任意目录运行。
 set -euo pipefail
 
-RS_DIR="$(cd "$(dirname "$0")" && pwd)"          # exchange-core-rs
+RS_DIR="$(cd "$(dirname "$0")/.." && pwd)"        # exchange-core-rs
 REPO_DIR="$(cd "$RS_DIR/.." && pwd)"             # raft-exchange
 MVN="${MVN:-mvn}"
 SEED_BASE="${1:-$(date +%s)}"
