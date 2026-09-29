@@ -11,7 +11,6 @@ use crate::core::processors::liquidation::command_submitter::{CommandSubmitter, 
 use crate::core::simple_events_processor::{NoopEventsHandler, SimpleEventsProcessor};
 use crate::core::trade_events_handler::TradeEventsHandler;
 use crate::core::fund_events_handler::FundEventsHandler;
-use crate::core::processors::liquidation::scheduler::LiquidationScheduler;
 use crate::core::processors::matching_engine_router::MatchingEngineRouter;
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::snapshot::serialization_processor::{
@@ -37,7 +36,6 @@ pub struct ExchangeCore {
     ser_proc: Box<dyn SerializationProcessor>,
     results_consumer: Box<dyn ResultsConsumer>,
     results_seq: i64,
-    liquidation_scheduler: LiquidationScheduler,
 }
 
 impl Default for ExchangeCore {
@@ -57,7 +55,6 @@ impl ExchangeCore {
             ser_proc: Box::new(InMemorySerializationProcessor::new()),
             results_consumer: Box::new(SimpleEventsProcessor::new(NoopEventsHandler, NoopEventsHandler)),
             results_seq: 0,
-            liquidation_scheduler: LiquidationScheduler::new(10, 30, 0),
         };
 
         let submitter = Rc::new(RefCell::new(VecCommandSink(core.pending_commands.clone())));
@@ -70,7 +67,6 @@ impl ExchangeCore {
     }
 
     pub fn with_command_submitter(&mut self, submitter: Rc<RefCell<dyn CommandSubmitter>>) {
-        self.liquidation_scheduler.set_command_submitter(submitter.clone());
         self.risk.liquidation_engine.set_command_submitter(submitter);
     }
 
@@ -135,15 +131,15 @@ impl ExchangeCore {
     }
 
     pub fn start_liquidation_scheduler(&mut self) {
-        self.liquidation_scheduler.is_running = true;
+        self.risk.liquidation_engine.is_running = true;
     }
 
     pub fn stop_liquidation_scheduler(&mut self) {
-        self.liquidation_scheduler.is_running = false;
+        self.risk.liquidation_engine.is_running = false;
     }
 
     pub fn tick_liquidation_scheduler(&mut self, now: i64) {
-        self.liquidation_scheduler.run_one_iteration(now);
+        self.risk.liquidation_engine.run_one_iteration(now);
         self.drive_pending();
     }
 

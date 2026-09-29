@@ -12,7 +12,7 @@ use crate::core::common::order_action::OrderAction;
 use crate::core::common::order_type::OrderType;
 use crate::core::common::user_profile::UserProfile;
 use crate::core::processors::liquidation::command_submitter::{CommandSubmitter, CommandSubmitterHandle};
-use crate::core::processors::liquidation::scheduler::covered_by_scan_slice;
+use crate::core::processors::liquidation::liquidation_engine::LiquidationEngine;
 use crate::core::processors::loan::loan_service::{
     LoanService, BPS_SCALE, ORDERID_SUBTYPE_CROSS, ORDERID_SUBTYPE_ISOLATED,
 };
@@ -86,7 +86,7 @@ impl LoanLiquidationEngine {
             }
             set.into_iter().collect()
         } else {
-            ups.users.values().filter(|up| covered_by_scan_slice(cmd, up.uid)).map(|up| up.uid).collect()
+            ups.users.values().filter(|up| LiquidationEngine::covered_by_scan_slice(cmd, up.uid)).map(|up| up.uid).collect()
         };
         let outcomes = pool.map(&uids, |&uid| ups.get(uid).map(|up| Self::decide_loan_liquidation(up, ssp, last_price_cache, loan_service, cmd.timestamp)));
         for outcome in outcomes.into_iter().flatten() {
