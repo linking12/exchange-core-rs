@@ -133,12 +133,7 @@ impl LoanService {
         };
         let base_amount = arithmetic::convert_scale(amount, base_spec.currency_scale_k, spec.base_scale_k);
         let notional = mul_exact(base_amount, mark_price);
-        arithmetic::size_price_to_currency_scale(
-            notional,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            quote_spec.currency_scale_k,
-        )
+        spec.size_price_to_currency_scale(notional, quote_spec)
     }
 
     pub fn value_in_numeraire(
@@ -207,12 +202,7 @@ impl LoanService {
         spec: &CoreSymbolSpecification,
         quote_spec: &CoreCurrencySpecification,
     ) -> i64 {
-        let notional = arithmetic::currency_to_size_price_scale(
-            quote_amount,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            quote_spec.currency_scale_k,
-        );
+        let notional = spec.currency_to_size_price_scale(quote_amount, quote_spec);
         arithmetic::ceil_divide(notional, mark_price)
     }
 

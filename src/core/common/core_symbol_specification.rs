@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::core::common::core_currency_specification::CoreCurrencySpecification;
 use crate::core::common::symbol_loan_specification::SymbolLoanSpecification;
 use crate::core::common::symbol_type::SymbolType;
 use crate::core::utils::core_arithmetic_utils::{add_exact, ceil_mul_div, trunc_mul_div};
@@ -25,6 +26,18 @@ pub struct CoreSymbolSpecification {
 }
 
 impl CoreSymbolSpecification {
+
+    pub fn size_price_to_currency_scale(&self, amount: i64, currency_spec: &CoreCurrencySpecification) -> i64 {
+        crate::core::utils::core_arithmetic_utils::size_price_to_currency_scale(
+            amount, self.base_scale_k, self.quote_scale_k, currency_spec.currency_scale_k,
+        )
+    }
+
+    pub fn currency_to_size_price_scale(&self, amount: i64, currency_spec: &CoreCurrencySpecification) -> i64 {
+        crate::core::utils::core_arithmetic_utils::currency_to_size_price_scale(
+            amount, self.base_scale_k, self.quote_scale_k, currency_spec.currency_scale_k,
+        )
+    }
 
     pub fn state_hash(&self) -> i32 {
         let mut h: i64 = 17;

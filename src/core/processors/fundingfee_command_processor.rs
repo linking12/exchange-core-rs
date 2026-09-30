@@ -269,12 +269,7 @@ impl FundingFeeCommandProcessor {
         if has_active_position {
             user.positions.get_mut(&lookup_symbol).expect("checked present above").profit += signed_fee;
         } else {
-            let scaled_fee = arithmetic::size_price_to_currency_scale(
-                signed_fee,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
+            let scaled_fee = spec.size_price_to_currency_scale(signed_fee, currency_spec);
             user.add_to_account(spec.quote_currency, scaled_fee);
         }
     }

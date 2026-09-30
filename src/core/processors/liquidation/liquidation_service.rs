@@ -8,7 +8,7 @@ use crate::core::common::user_profile::UserProfile;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
 #[cfg(test)]
 use crate::core::processors::user_profile_service::UserProfileService;
-use crate::core::utils::core_arithmetic_utils::{mul_exact, size_price_to_currency_scale};
+use crate::core::utils::core_arithmetic_utils::mul_exact;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IfNotional {
@@ -265,9 +265,9 @@ impl LiquidationService {
                 continue;
             }
             let pnl = position.estimate_pnl(mark_price);
-            total_profit += size_price_to_currency_scale(pnl, spec.base_scale_k, spec.quote_scale_k, currency_spec.currency_scale_k);
+            total_profit += spec.size_price_to_currency_scale(pnl, &currency_spec);
             total_maintenance +=
-                size_price_to_currency_scale(maintenance, spec.base_scale_k, spec.quote_scale_k, currency_spec.currency_scale_k);
+                spec.size_price_to_currency_scale(maintenance, &currency_spec);
         }
 
         if total_maintenance <= 0 || total_profit <= 0 {

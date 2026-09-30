@@ -134,12 +134,7 @@ impl UserProfile {
                 Some(s) => s,
                 None => continue,
             };
-            cross_available -= arithmetic::size_price_to_currency_scale(
-                iso.calculate_required_margin_for_futures(iso_spec),
-                iso_spec.base_scale_k,
-                iso_spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
+            cross_available -= iso_spec.size_price_to_currency_scale(iso.calculate_required_margin_for_futures(iso_spec), currency_spec);
         }
         cross_available
     }
@@ -185,18 +180,8 @@ impl UserProfile {
                     Some(price) => price,
                     None => continue,
                 };
-                let pnl = arithmetic::size_price_to_currency_scale(
-                    p.estimate_pnl(p_price),
-                    p_spec.base_scale_k,
-                    p_spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
-                let mm = arithmetic::size_price_to_currency_scale(
-                    p.calculate_maintenance_margin(p_spec, p_price),
-                    p_spec.base_scale_k,
-                    p_spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                let pnl = p_spec.size_price_to_currency_scale(p.estimate_pnl(p_price), currency_spec);
+                let mm = p_spec.size_price_to_currency_scale(p.calculate_maintenance_margin(p_spec, p_price), currency_spec);
                 upnl_by_pos.insert(key, pnl);
                 mm_by_pos.insert(key, mm);
                 total_upnl += pnl;
@@ -222,12 +207,7 @@ impl UserProfile {
                 margin_base_by_pos.insert(
                     key,
 
-                    arithmetic::currency_to_size_price_scale(
-                        margin_base_currency,
-                        pos_spec.base_scale_k,
-                        pos_spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    ),
+                    pos_spec.currency_to_size_price_scale(margin_base_currency, currency_spec),
                 );
             }
         }

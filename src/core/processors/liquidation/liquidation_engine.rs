@@ -24,7 +24,7 @@ use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
 use crate::core::processors::user_profile_service::UserProfileService;
 use crate::core::utils::core_arithmetic_utils::{
-    calculate_deficit_after_liquidate, calculate_size_to_liquidate, mul_exact, size_price_to_currency_scale,
+    calculate_deficit_after_liquidate, calculate_size_to_liquidate, mul_exact,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -277,18 +277,8 @@ impl LiquidationEngine {
 
                     continue;
                 }
-                let profit = size_price_to_currency_scale(
-                    position.estimate_pnl(mark_price),
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
-                let maintenance = size_price_to_currency_scale(
-                    raw_maintenance,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                let profit = spec.size_price_to_currency_scale(position.estimate_pnl(mark_price), currency_spec);
+                let maintenance = spec.size_price_to_currency_scale(raw_maintenance, currency_spec);
                 total_profit += profit;
                 total_maintenance += maintenance;
                 if maintenance != 0 {

@@ -101,45 +101,54 @@ impl RiskEngine {
             return;
         }
 
-        if cmd.command == OrderCommandType::PlaceOrder {
-            let rc = self.place_order_risk_check(cmd, ups, ssp);
-            cmd.result_code = Some(rc);
-            if rc == CommandResultCode::ValidForMatchingEngine {
-                if let Some(spec) = ssp.get_symbol(cmd.symbol) {
-                    let (oid, uid) = (cmd.order_id, cmd.uid);
-                    if spec.symbol_type == SymbolType::CurrencyExchangePair {
-                        let cur = if cmd.action == Some(OrderAction::Bid) { spec.quote_currency } else { spec.base_currency };
-                        Self::push_spot_balance_event(cmd, ups, ssp, FundEventType::Locked, oid, uid, cur, spec.symbol_id);
-                    } else if let Some(action) = cmd.action {
-                        if let Some(up) = ups.get(uid) {
-                            let key = up.create_positions_key(spec.symbol_id, action, cmd.command);
-                            if let Some(pos) = up.positions.get(&key) {
-                                Self::push_futures_event(&mut cmd.fund_events, &self.last_price_cache, FundEventType::LockPending, oid, pos, spec, up, ssp);
+        match cmd.command {
+            OrderCommandType::PlaceOrder => {
+                let rc = self.place_order_risk_check(cmd, ups, ssp);
+                cmd.result_code = Some(rc);
+                if rc == CommandResultCode::ValidForMatchingEngine {
+                    if let Some(spec) = ssp.get_symbol(cmd.symbol) {
+                        let (oid, uid) = (cmd.order_id, cmd.uid);
+                        if spec.symbol_type == SymbolType::CurrencyExchangePair {
+                            let cur = if cmd.action == Some(OrderAction::Bid) { spec.quote_currency } else { spec.base_currency };
+                            Self::push_spot_balance_event(cmd, ups, ssp, FundEventType::Locked, oid, uid, cur, spec.symbol_id);
+                        } else if let Some(action) = cmd.action {
+                            if let Some(up) = ups.get(uid) {
+                                let key = up.create_positions_key(spec.symbol_id, action, cmd.command);
+                                if let Some(pos) = up.positions.get(&key) {
+                                    Self::push_futures_event(&mut cmd.fund_events, &self.last_price_cache, FundEventType::LockPending, oid, pos, spec, up, ssp);
+                                }
                             }
                         }
                     }
                 }
             }
-        } else if cmd.command == OrderCommandType::ClosePosition {
-            cmd.result_code = Some(self.close_position_risk_check(cmd, ups, ssp));
-        } else if cmd.command == OrderCommandType::SettleFundingfees {
-            let mut ctx = TwoStepContext::new(self, ups, ssp);
-            cmd.result_code = Some(FundingFeeCommandProcessor.collect(&mut ctx, cmd));
-        } else if cmd.command == OrderCommandType::ForceLiquidation {
-            cmd.result_code = Some(Self::normalize_cmd_position_size(cmd, ups));
-        } else if cmd.command == OrderCommandType::IfTakeover {
-            let norm = Self::normalize_cmd_position_size(cmd, ups);
-            let mut ctx = TwoStepContext::new(self, ups, ssp);
-            let collected = IfCommandProcessor.collect(&mut ctx, cmd);
-            cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
-        } else if cmd.command == OrderCommandType::AutoDeleveraging {
-            let norm = Self::normalize_cmd_position_size(cmd, ups);
-            let mut ctx = TwoStepContext::new(self, ups, ssp);
-            let collected = AdlCommandProcessor.collect(&mut ctx, cmd);
-            cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
-        } else if cmd.command == OrderCommandType::LiquidationScan {
-            self.check_liquidations(cmd, ups, ssp);
-            cmd.result_code = Some(CommandResultCode::Success);
+            OrderCommandType::ClosePosition => {
+                cmd.result_code = Some(self.close_position_risk_check(cmd, ups, ssp));
+            }
+            OrderCommandType::SettleFundingfees => {
+                let mut ctx = TwoStepContext::new(self, ups, ssp);
+                cmd.result_code = Some(FundingFeeCommandProcessor.collect(&mut ctx, cmd));
+            }
+            OrderCommandType::ForceLiquidation => {
+                cmd.result_code = Some(Self::normalize_cmd_position_size(cmd, ups));
+            }
+            OrderCommandType::IfTakeover => {
+                let norm = Self::normalize_cmd_position_size(cmd, ups);
+                let mut ctx = TwoStepContext::new(self, ups, ssp);
+                let collected = IfCommandProcessor.collect(&mut ctx, cmd);
+                cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
+            }
+            OrderCommandType::AutoDeleveraging => {
+                let norm = Self::normalize_cmd_position_size(cmd, ups);
+                let mut ctx = TwoStepContext::new(self, ups, ssp);
+                let collected = AdlCommandProcessor.collect(&mut ctx, cmd);
+                cmd.result_code = Some(if norm == CommandResultCode::AuthInvalidUser { norm } else { collected });
+            }
+            OrderCommandType::LiquidationScan => {
+                self.check_liquidations(cmd, ups, ssp);
+                cmd.result_code = Some(CommandResultCode::Success);
+            }
+            _ => {}
         }
     }
 
@@ -332,12 +341,7 @@ impl RiskEngine {
                         spec.liquidation_fee,
                         spec.fee_scale_k,
                     );
-                    let quote_fee = arithmetic::size_price_to_currency_scale(
-                        notional_fee,
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        quote_currency_spec.currency_scale_k,
-                    );
+                    let quote_fee = spec.size_price_to_currency_scale(notional_fee, &quote_currency_spec);
                     let liq_fee_uid = cmd.uid;
                     let liq_fee_order_id = cmd.order_id;
                     let liq_fee_currency = spec.quote_currency;
@@ -676,7 +680,7 @@ impl RiskEngine {
         }
         let Some(cspec) = ssp.get_currency(pos.currency) else { return (upnl, 0, 0, mmsk) };
         let balance_ccy = up.calculate_cross_available(pos.currency, cspec, |sid| ssp.get_symbol(sid));
-        let balance = crate::core::utils::core_arithmetic_utils::currency_to_size_price_scale(balance_ccy, spec.base_scale_k, spec.quote_scale_k, cspec.currency_scale_k);
+        let balance = spec.currency_to_size_price_scale(balance_ccy, cspec);
         let total_margin = balance + total_pnl;
         let liq = pos.estimate_liquidation_price(spec, mark, balance, total_pnl, total_mm);
         let mr = pos.estimate_margin_ratio_scale_k(spec, mark, total_margin);
@@ -807,12 +811,7 @@ impl RiskEngine {
             if key == position_key {
                 if pos_record.margin_mode == MarginMode::Cross {
                     let mark = self.mark_price(pos_record.symbol).unwrap_or(0);
-                    cross_free_margin += arithmetic::size_price_to_currency_scale(
-                        pos_record.estimate_pnl(mark),
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    );
+                    cross_free_margin += spec.size_price_to_currency_scale(pos_record.estimate_pnl(mark), currency_spec);
                 }
             } else if pos_record.currency == spec.quote_currency {
                 let other_spec = ssp
@@ -820,19 +819,9 @@ impl RiskEngine {
                     .unwrap_or_else(|| panic!("symbol spec missing for symbol {}", pos_record.symbol));
                 if pos_record.margin_mode == MarginMode::Cross {
                     let mark = self.mark_price(pos_record.symbol).unwrap_or(0);
-                    cross_free_margin += arithmetic::size_price_to_currency_scale(
-                        pos_record.estimate_pnl(mark),
-                        other_spec.base_scale_k,
-                        other_spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    );
+                    cross_free_margin += other_spec.size_price_to_currency_scale(pos_record.estimate_pnl(mark), currency_spec);
                 }
-                cross_free_margin -= arithmetic::size_price_to_currency_scale(
-                    pos_record.calculate_required_margin_for_futures(other_spec),
-                    other_spec.base_scale_k,
-                    other_spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                cross_free_margin -= other_spec.size_price_to_currency_scale(pos_record.calculate_required_margin_for_futures(other_spec), currency_spec);
             }
         }
 
@@ -866,12 +855,7 @@ impl RiskEngine {
         let currency = position.currency;
         let spendable = user_profile.account(currency) - user_profile.locked(currency)
             - Self::loan_collateral_locked(user_profile, currency);
-        let required = arithmetic::size_price_to_currency_scale(
-            position_margin + pending_fee + open_loss,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        ) - cross_free_margin;
+        let required = spec.size_price_to_currency_scale(position_margin + pending_fee + open_loss, currency_spec) - cross_free_margin;
         required <= spendable
     }
 
@@ -892,12 +876,7 @@ impl RiskEngine {
         currency_spec: &CoreCurrencySpecification,
     ) -> i64 {
         let required = position.calculate_required_margin_for_futures(spec);
-        arithmetic::size_price_to_currency_scale(
-            required,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        )
+        spec.size_price_to_currency_scale(required, currency_spec)
     }
 
     fn calculate_free_futures_margin_for_symbol(
@@ -929,43 +908,18 @@ impl RiskEngine {
                 .unwrap_or_else(|| panic!("symbol spec missing for symbol {}", position.symbol));
             let mark = self.mark_price(position.symbol).unwrap_or(0);
 
-            realized_pnl += arithmetic::size_price_to_currency_scale(
-                position.profit,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
+            realized_pnl += spec.size_price_to_currency_scale(position.profit, currency_spec);
 
             if position.margin_mode == MarginMode::Cross {
-                unrealized_pnl += arithmetic::size_price_to_currency_scale(
-                    position.estimate_unrealized_profit(mark),
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                unrealized_pnl += spec.size_price_to_currency_scale(position.estimate_unrealized_profit(mark), currency_spec);
                 let initial_margin = position.calculate_required_margin_for_futures(spec);
-                cross_initial_margin += arithmetic::size_price_to_currency_scale(
-                    initial_margin,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                cross_initial_margin += spec.size_price_to_currency_scale(initial_margin, currency_spec);
                 let maintenance_margin = initial_margin - position.open_init_margin_sum
                     + position.calculate_maintenance_margin(spec, mark);
-                cross_maintenance_margin += arithmetic::size_price_to_currency_scale(
-                    maintenance_margin,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    currency_spec.currency_scale_k,
-                );
+                cross_maintenance_margin += spec.size_price_to_currency_scale(maintenance_margin, currency_spec);
             } else {
                 if position.symbol == cur_pos_symbol {
-                    unrealized_pnl += arithmetic::size_price_to_currency_scale(
-                        position.estimate_unrealized_profit(mark),
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    );
+                    unrealized_pnl += spec.size_price_to_currency_scale(position.estimate_unrealized_profit(mark), currency_spec);
                 }
                 isolated_required_margin += Self::calculate_locked_margin(position, spec, currency_spec);
             }
@@ -1018,12 +972,7 @@ impl RiskEngine {
                     spec.fee_scale_k,
                 )
             };
-            arithmetic::size_price_to_currency_scale(
-                raw,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            )
+            spec.size_price_to_currency_scale(raw, currency_spec)
         } else {
             if arithmetic::is_ask_price_too_low(cmd.price, spec.taker_fee, spec.fee_scale_k) {
                 return CommandResultCode::RiskAskPriceLowerThanFee;
@@ -1091,12 +1040,7 @@ impl RiskEngine {
                     spec.fee_scale_k,
                 )
             };
-            arithmetic::size_price_to_currency_scale(
-                release_sp,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            )
+            spec.size_price_to_currency_scale(release_sp, currency_spec)
         };
 
         taker_up.add_to_locked(currency, -release);
@@ -1160,12 +1104,7 @@ impl RiskEngine {
                     spec.taker_fee,
                     spec.fee_scale_k,
                 );
-                let hold_quote = arithmetic::size_price_to_currency_scale(
-                    hold_quote_raw,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let hold_quote = spec.size_price_to_currency_scale(hold_quote_raw, quote_currency_spec);
 
                 let quote_refund_raw = arithmetic::calculate_amount_bid_release_corr_maker(
                     ev.size,
@@ -1175,12 +1114,7 @@ impl RiskEngine {
                     spec.maker_fee,
                     spec.fee_scale_k,
                 );
-                let quote_refund = arithmetic::size_price_to_currency_scale(
-                    quote_refund_raw,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let quote_refund = spec.size_price_to_currency_scale(quote_refund_raw, quote_currency_spec);
 
                 maker_up.add_to_locked(quote_currency, -hold_quote);
                 maker_up.add_to_account(quote_currency, quote_refund - hold_quote);
@@ -1231,12 +1165,7 @@ impl RiskEngine {
 
             let net_notional_raw = i64::try_from(taker_notional - taker_fee as i128)
                 .unwrap_or_else(|_| panic!("overflow narrowing taker net notional"));
-            let to_be_added = arithmetic::size_price_to_currency_scale(
-                net_notional_raw,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                quote_currency_spec.currency_scale_k,
-            );
+            let to_be_added = spec.size_price_to_currency_scale(net_notional_raw, quote_currency_spec);
             taker_up.add_to_account(quote_currency, to_be_added);
 
             fund_events.push(Self::spot_snapshot_event(FundEventType::Transfer, cmd.order_id, taker_up, quote_currency, ssp, quote_currency_spec, spec.symbol_id));
@@ -1260,12 +1189,7 @@ impl RiskEngine {
             let fee_sum = taker_fee
                 .checked_add(maker_fee)
                 .unwrap_or_else(|| panic!("overflow: taker_fee + maker_fee"));
-            let fee_scaled = arithmetic::size_price_to_currency_scale(
-                fee_sum,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                quote_currency_spec.currency_scale_k,
-            );
+            let fee_scaled = spec.size_price_to_currency_scale(fee_sum, quote_currency_spec);
             *fees.entry(quote_currency).or_insert(0) += fee_scaled;
         }
     }
@@ -1318,12 +1242,7 @@ impl RiskEngine {
                     spec.maker_fee,
                     spec.fee_scale_k,
                 );
-                let to_be_added = arithmetic::size_price_to_currency_scale(
-                    quote_gained - fee,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let to_be_added = spec.size_price_to_currency_scale(quote_gained - fee, quote_currency_spec);
                 maker_up.add_to_account(quote_currency, to_be_added);
 
                 fund_events.push(Self::spot_snapshot_event(FundEventType::Transfer, ev.maker_order_id, maker_up, quote_currency, ssp, quote_currency_spec, spec.symbol_id));
@@ -1364,12 +1283,7 @@ impl RiskEngine {
                     spec.fee_scale_k,
                 );
                 let leftover = held_total - (taker_notional_i64 + taker_fee);
-                let hold_quote = arithmetic::size_price_to_currency_scale(
-                    held_total,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let hold_quote = spec.size_price_to_currency_scale(held_total, quote_currency_spec);
                 (leftover, hold_quote, taker_notional_i64)
             } else {
                 let taker_hold_notional_i64 = i64::try_from(taker_hold_notional)
@@ -1382,21 +1296,11 @@ impl RiskEngine {
                     spec.fee_scale_k,
                 );
                 let leftover = fee_held - taker_fee;
-                let hold_quote = arithmetic::size_price_to_currency_scale(
-                    taker_hold_notional_i64 + fee_held,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let hold_quote = spec.size_price_to_currency_scale(taker_hold_notional_i64 + fee_held, quote_currency_spec);
                 (leftover, hold_quote, taker_hold_notional_i64)
             };
 
-            let quote_refund = arithmetic::size_price_to_currency_scale(
-                effective_hold_notional - taker_notional_i64 + leftover,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                quote_currency_spec.currency_scale_k,
-            );
+            let quote_refund = spec.size_price_to_currency_scale(effective_hold_notional - taker_notional_i64 + leftover, quote_currency_spec);
 
             let taker_up = ups.get_or_add_suspended(cmd.uid);
 
@@ -1434,12 +1338,7 @@ impl RiskEngine {
             let fee_sum = taker_fee
                 .checked_add(maker_fee)
                 .unwrap_or_else(|| panic!("overflow: taker_fee + maker_fee"));
-            let fee_scaled = arithmetic::size_price_to_currency_scale(
-                fee_sum,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                quote_currency_spec.currency_scale_k,
-            );
+            let fee_scaled = spec.size_price_to_currency_scale(fee_sum, quote_currency_spec);
             *fees.entry(quote_currency).or_insert(0) += fee_scaled;
         }
     }
@@ -1597,12 +1496,7 @@ impl RiskEngine {
                     } else {
                         arithmetic::calculate_maker_fee(closed_size, mte.price, spec.maker_fee, spec.fee_scale_k)
                     };
-                    let fee = arithmetic::size_price_to_currency_scale(
-                        raw_fee,
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        quote_currency_spec.currency_scale_k,
-                    );
+                    let fee = spec.size_price_to_currency_scale(raw_fee, quote_currency_spec);
                     up.add_to_account(quote_currency, -fee);
                     *risk.fees.entry(quote_currency).or_insert(0) += fee;
 
@@ -1624,12 +1518,7 @@ impl RiskEngine {
                     } else {
                         arithmetic::calculate_maker_fee(size_to_open, mte.price, spec.maker_fee, spec.fee_scale_k)
                     };
-                    let fee = arithmetic::size_price_to_currency_scale(
-                        raw_fee,
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        quote_currency_spec.currency_scale_k,
-                    );
+                    let fee = spec.size_price_to_currency_scale(raw_fee, quote_currency_spec);
                     up.add_to_account(quote_currency, -fee);
                     *risk.fees.entry(quote_currency).or_insert(0) += fee;
 
@@ -1654,12 +1543,7 @@ impl RiskEngine {
 
             let extra_margin = up.positions.get(&position_key).unwrap().extra_margin;
             if extra_margin > 0 {
-                let refund = arithmetic::size_price_to_currency_scale(
-                    extra_margin,
-                    spec.base_scale_k,
-                    spec.quote_scale_k,
-                    quote_currency_spec.currency_scale_k,
-                );
+                let refund = spec.size_price_to_currency_scale(extra_margin, quote_currency_spec);
                 up.add_to_account(currency, refund);
                 Self::push_futures_event(fund_events, last_price_cache, FundEventType::MarginRefund, event_order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
                 up.positions.get_mut(&position_key).unwrap().extra_margin = 0;
@@ -1740,7 +1624,7 @@ impl RiskEngine {
             (p.currency, p.profit)
         };
         if profit != 0 {
-            let profit_scaled = arithmetic::size_price_to_currency_scale(profit, spec.base_scale_k, spec.quote_scale_k, currency_spec.currency_scale_k);
+            let profit_scaled = spec.size_price_to_currency_scale(profit, currency_spec);
             up.add_to_account(currency, profit_scaled);
         }
         self.liquidation_engine.on_position_closed(up, spec.symbol_id, position_key);
@@ -1784,12 +1668,7 @@ impl RiskEngine {
 
         let extra_margin = up.positions.get(&position_key).unwrap().extra_margin;
         if extra_margin > 0 {
-            let refund = arithmetic::size_price_to_currency_scale(
-                extra_margin,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
+            let refund = spec.size_price_to_currency_scale(extra_margin, currency_spec);
             up.add_to_account(currency, refund);
             Self::push_futures_event(fund_events, &self.last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&position_key).unwrap(), spec, up, ssp);
             up.positions.get_mut(&position_key).unwrap().extra_margin = 0;

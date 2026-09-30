@@ -15,7 +15,6 @@ use crate::core::processors::twostep_command_processor::{TwoStepCommandProcessor
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::symbol_specification_provider::SymbolSpecificationProvider;
 use crate::core::processors::user_profile_service::UserProfileService;
-use crate::core::utils::core_arithmetic_utils as arithmetic;
 
 pub struct RiskEngineCommandDispatcher;
 
@@ -227,12 +226,7 @@ impl RiskEngineCommandDispatcher {
         let currency_spec = ssp
             .get_currency(currency)
             .unwrap_or_else(|| panic!("currency spec missing for currency {currency}"));
-        let extra_margin_delta = arithmetic::currency_to_size_price_scale(
-            cmd.price,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        );
+        let extra_margin_delta = spec.currency_to_size_price_scale(cmd.price, currency_spec);
         user_profile.positions.get_mut(&position_key).unwrap().extra_margin += extra_margin_delta;
 
         CommandResultCode::Success
@@ -288,12 +282,7 @@ impl RiskEngineCommandDispatcher {
             let currency_spec = ssp
                 .get_currency(spec.quote_currency)
                 .unwrap_or_else(|| panic!("currency spec missing for currency {}", spec.quote_currency));
-            let diff = arithmetic::size_price_to_currency_scale(
-                new_required - old_required,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                currency_spec.currency_scale_k,
-            );
+            let diff = spec.size_price_to_currency_scale(new_required - old_required, currency_spec);
             let balance = user_profile.account(spec.quote_currency);
             let locked = RiskEngine::calculate_locked(user_profile, spec.quote_currency, ssp, currency_spec);
             if diff > balance - locked {
@@ -357,12 +346,7 @@ impl RiskEngineCommandDispatcher {
 
                 let extra_margin = up.positions.get(&key).unwrap().extra_margin;
                 if extra_margin > 0 {
-                    let refund = arithmetic::size_price_to_currency_scale(
-                        extra_margin,
-                        spec.base_scale_k,
-                        spec.quote_scale_k,
-                        currency_spec.currency_scale_k,
-                    );
+                    let refund = spec.size_price_to_currency_scale(extra_margin, &currency_spec);
                     up.add_to_account(currency, refund);
                     RiskEngine::push_futures_event(&mut cmd.fund_events, &engine.last_price_cache, FundEventType::MarginRefund, order_id, up.positions.get(&key).unwrap(), &spec, up, ssp);
                     up.positions.get_mut(&key).unwrap().extra_margin = 0;
@@ -391,18 +375,8 @@ impl RiskEngineCommandDispatcher {
             Some(c) => c,
             None => return CommandResultCode::InvalidSymbol,
         };
-        let notional = arithmetic::currency_to_size_price_scale(
-            currency_amount,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        );
-        let round_tripped = arithmetic::size_price_to_currency_scale(
-            notional,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        );
+        let notional = spec.currency_to_size_price_scale(currency_amount, currency_spec);
+        let round_tripped = spec.size_price_to_currency_scale(notional, currency_spec);
         if round_tripped != currency_amount {
             return CommandResultCode::RiskInvalidAmount;
         }
@@ -428,18 +402,8 @@ impl RiskEngineCommandDispatcher {
             Some(c) => c,
             None => return CommandResultCode::InvalidSymbol,
         };
-        let notional = arithmetic::currency_to_size_price_scale(
-            currency_amount,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        );
-        let round_tripped = arithmetic::size_price_to_currency_scale(
-            notional,
-            spec.base_scale_k,
-            spec.quote_scale_k,
-            currency_spec.currency_scale_k,
-        );
+        let notional = spec.currency_to_size_price_scale(currency_amount, currency_spec);
+        let round_tripped = spec.size_price_to_currency_scale(notional, currency_spec);
         if round_tripped != currency_amount {
             return CommandResultCode::RiskInvalidAmount;
         }

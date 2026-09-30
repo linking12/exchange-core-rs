@@ -406,12 +406,7 @@ impl LoanCommandDispatcher {
             let taker_fee = arithmetic::calculate_taker_fee(traded_size, avg_taker_price, spec.taker_fee, spec.fee_scale_k);
             let traded_notional_i64 = i64::try_from(traded_notional)
                 .unwrap_or_else(|_| panic!("overflow narrowing traded_notional"));
-            let received_quote = arithmetic::size_price_to_currency_scale(
-                traded_notional_i64 - taker_fee,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                loan_currency_spec.currency_scale_k,
-            );
+            let received_quote = spec.size_price_to_currency_scale(traded_notional_i64 - taker_fee, loan_currency_spec);
             let loan = taker_up.isolated_loans.get_mut(&loan_id).expect("checked above");
             engine.loan_service.settle_liquidation_proceeds(loan, &mut taker_up.accounts, received_quote, cmd.timestamp);
         }
@@ -716,12 +711,7 @@ impl LoanCommandDispatcher {
             let taker_fee = arithmetic::calculate_taker_fee(traded_size, avg_taker_price, spec.taker_fee, spec.fee_scale_k);
             let traded_notional_i64 = i64::try_from(traded_notional)
                 .unwrap_or_else(|_| panic!("overflow narrowing traded_notional"));
-            let received_quote = arithmetic::size_price_to_currency_scale(
-                traded_notional_i64 - taker_fee,
-                spec.base_scale_k,
-                spec.quote_scale_k,
-                loan_currency_spec.currency_scale_k,
-            );
+            let received_quote = spec.size_price_to_currency_scale(traded_notional_i64 - taker_fee, loan_currency_spec);
             let loan = taker_up.cross_loans.get_mut(&target_loan_id).expect("checked above");
             engine.loan_service.settle_liquidation_proceeds(loan, &mut taker_up.accounts, received_quote, cmd.timestamp);
         }

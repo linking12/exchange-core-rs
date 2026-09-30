@@ -10,7 +10,6 @@ use crate::core::common::user_status::UserStatus;
 use crate::core::exchange_core::ExchangeCore;
 use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::processors::loan::loan_service::{LoanService, BPS_SCALE as LOAN_BPS_SCALE};
-use crate::core::utils::core_arithmetic_utils::size_price_to_currency_scale;
 
 #[inline]
 fn add(map: &mut BTreeMap<i32, i64>, k: i32, v: i64) {
@@ -444,7 +443,7 @@ impl ExchangeCore {
     fn size_price_to_currency(&self, amount: i64, symbol: i32) -> Option<(i32, i64)> {
         let spec = self.ssp.get_symbol(symbol)?;
         let cspec = self.ssp.get_currency(spec.quote_currency)?;
-        let v = size_price_to_currency_scale(amount, spec.base_scale_k, spec.quote_scale_k, cspec.currency_scale_k);
+        let v = spec.size_price_to_currency_scale(amount, cspec);
         Some((spec.quote_currency, v))
     }
 
