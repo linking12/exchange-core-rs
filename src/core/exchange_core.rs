@@ -207,14 +207,15 @@ impl ExchangeCore {
             .ser_proc
             .load_data(snapshot_id, SerializedModuleType::RiskEngine, instance_id)
             .ok_or(RecoveryError::RiskEngineSnapshotNotFound)?;
-        crate::core::processors::risk_engine::read_risk_engine_payload(&re, self)
-            .map_err(RecoveryError::RiskEnginePayloadParse)?;
         let me = self
             .ser_proc
             .load_data(snapshot_id, SerializedModuleType::MatchingEngineRouter, instance_id)
             .ok_or(RecoveryError::MatchingEngineSnapshotNotFound)?;
-        self.matching = MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me))
+        let matching = MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me))
             .map_err(RecoveryError::MatchingEnginePayloadParse)?;
+        crate::core::processors::risk_engine::read_risk_engine_payload(&re, self)
+            .map_err(RecoveryError::RiskEnginePayloadParse)?;
+        self.matching = matching;
         if let Some(cs) = self.ser_proc.load_data(snapshot_id, SerializedModuleType::ExchangeCore, instance_id) {
             match ChronicleReader::new(&cs).read_i64() {
                 Ok(seq) => self.results_seq = seq,

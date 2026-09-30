@@ -1733,16 +1733,25 @@ pub fn read_risk_engine_payload(payload: &[u8], core: &mut ExchangeCore) -> Resu
     let mut r = SnapChronicleReader::new(payload);
     let _shard_id = r.read_i32()?;
     let _shard_mask = r.read_i64()?;
-    core.ssp = SymbolSpecificationProvider::chronicle_read(&mut r)?;
-    core.ups = UserProfileService::chronicle_read(&mut r)?;
-    core.risk.liquidation_service = LiquidationService::chronicle_read(&mut r)?;
-    core.risk.loan_service = LoanService::chronicle_read(&mut r)?;
-    core.risk.binary_cmd = BinaryCommandsProcessor::chronicle_read(&mut r)?;
-    core.risk.last_price_cache = snap_to_btree_i32(r.read_int_keyed_map(LastPriceCacheRecord::chronicle_read)?);
-    core.risk.fees = snap_to_btree_i32(r.read_int_long_map()?);
-    core.risk.adjustments = snap_to_btree_i32(r.read_int_long_map()?);
-    core.risk.suspends = snap_to_btree_i32(r.read_int_long_map()?);
+    let ssp = SymbolSpecificationProvider::chronicle_read(&mut r)?;
+    let ups = UserProfileService::chronicle_read(&mut r)?;
+    let liquidation_service = LiquidationService::chronicle_read(&mut r)?;
+    let loan_service = LoanService::chronicle_read(&mut r)?;
+    let binary_cmd = BinaryCommandsProcessor::chronicle_read(&mut r)?;
+    let last_price_cache = snap_to_btree_i32(r.read_int_keyed_map(LastPriceCacheRecord::chronicle_read)?);
+    let fees = snap_to_btree_i32(r.read_int_long_map()?);
+    let adjustments = snap_to_btree_i32(r.read_int_long_map()?);
+    let suspends = snap_to_btree_i32(r.read_int_long_map()?);
     debug_assert!(r.is_empty(), "RE payload not fully consumed; field layout may have drifted");
+    core.ssp = ssp;
+    core.ups = ups;
+    core.risk.liquidation_service = liquidation_service;
+    core.risk.loan_service = loan_service;
+    core.risk.binary_cmd = binary_cmd;
+    core.risk.last_price_cache = last_price_cache;
+    core.risk.fees = fees;
+    core.risk.adjustments = adjustments;
+    core.risk.suspends = suspends;
     Ok(())
 }
 
