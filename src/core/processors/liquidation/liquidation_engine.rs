@@ -89,9 +89,6 @@ impl LiquidationEngine {
     pub fn rebuild_indices(&mut self, ups: &UserProfileService, ssp: &SymbolSpecificationProvider) {
         for up in ups.users.values() {
             for pos in up.positions.values() {
-                if pos.open_volume == 0 {
-                    continue;
-                }
                 if let Some(spec) = ssp.get_symbol(pos.symbol) {
                     if spec.symbol_type.is_futures_contract() {
                         self.on_position_opened(up.uid, pos.symbol);

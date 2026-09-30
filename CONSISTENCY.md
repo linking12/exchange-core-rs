@@ -343,6 +343,10 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 换视角再审(避免与 §7.11 重复):**① 算术/scale/取整** 逐函数核对 `CoreArithmeticUtils` 及所有 money 路径(费/保证金/破产·清算价/funding 余数/loan 利息·LTV·抵押/PnL scale)——ceil/trunc 方向与 i128 中间量、scale 换算方向全对齐,**CLEAN**。**② result-code 校验顺序** 逐命令核对 R1 守卫序与返回码(place/close/balance/margin/leverage/funding/loan 全家的 `>` vs `>=` 边界、tryClaim/NSF/AUTH 次序、幂等锚)——**基本 CLEAN**,唯一新发现是 binary `BINARY_DATA_COMMAND`(码 91)管线静默丢批处理,属 §1.1 已知开放项(已补进 §6 表)。**③ 遗留未验项** 核实 `getLeverage`(Java 纯 Lombok 字段、归一在写侧,两侧同→CLEAN)、快照 bid 侧写序(逐字节比对 `chain_snapshot(best_bid)` 沿 prev + Order 写序 = Java `bidOrdersStream`→CLEAN);本会话 §7.11 的 7 处改动逐条复查确认更对齐 Java 且无副作用。informational:IF/ADL 的 normalize/collect 先后(结果码一致,§6 域内)、`SETTLE_PNL` 多一道 currency-spec 守卫(Rust 更健壮、Java 会 NPE)。**结论:无新增资金/状态/结果码分歧。**
 
+### 7.13 port-parity 复审(2026-09-30):修快照恢复 `symbol_to_users` 漏挂单仓
+
+`port-parity-review` skill 四子系统复审(funding/强平·ADL·IF/loan/settlement+fees):前三者三项检查全 CLEAN;**settlement+fees 抓到一处 MEDIUM 状态不变量 gap**——`LiquidationEngine::rebuild_indices`(快照恢复重建索引)有 `if pos.open_volume == 0 { continue; }`,**跳过挂单态(open_volume==0)期货仓**。而 Java `updateProvider`→`onPositionOpened`(`RiskEngine.java:493` 在 `newPosition` 提交时、`pendingHold` 之前登记,**无 openVolume 过滤**)与 Rust 自身 live `place_order`(`is_new_position` 时无条件 `on_position_opened`)**都登记挂单仓**。后果:快照含挂单仓 → 恢复被跳过 → 之后成交(`settle_margin_position_event` 不调 `on_position_opened`)→ 该仓永久缺失于索引 → 定向强平/ funding 扫描(`cmd.symbol>=0`)漏掉,仅周期性全量 `LIQUIDATION_SCAN`(`symbol<0`)兜底(漂移非丢钱,per-command conformance 抓不到)。**修**:删掉该 `open_volume==0` 跳过,登记所有期货仓 = 对齐 Java + 对齐 Rust live 路径。**注**:旧快照测试曾断言挂单仓被排除、注释误标"aligned with Java",已翻转为"必须被重建"(`snapshot_roundtrip_*` 内 `holders.contains(&U_MAKER)`)= 回归护栏(还原 filter 即红)。
+
 ---
 
 ## 8. 命令流 DSL 参考

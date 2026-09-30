@@ -1353,7 +1353,10 @@ mod snapshot_tests {
 
         let holders = restored.risk.liquidation_engine.symbol_to_users.get(&FUT).expect("futures index rebuilt");
         assert!(holders.contains(&U_LONG) && holders.contains(&U_SHORT));
-        assert!(!holders.contains(&U_MAKER), "users who only rest orders without opening a position are filtered by open_volume>0 and excluded from the rebuilt index (aligned with Java)");
+        assert!(
+            holders.contains(&U_MAKER),
+            "pending-only futures holder (open_volume==0, order still resting) must be re-indexed on recovery, matching Java updateProvider→onPositionOpened (no open_volume filter, RiskEngine.java:493 registers at place time) and Rust's own live place_order path"
+        );
         assert!(
             restored.risk.liquidation_engine.loan_liquidation_engine.isolated_loan_symbol_to_users.get(&SPOT).unwrap().contains(&BORROWER),
             "loan 索引重建"
