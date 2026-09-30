@@ -5797,7 +5797,7 @@ mod tests {
 
             let generated: std::rc::Rc<std::cell::RefCell<Vec<OrderCommand>>> = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             engine.liquidation_engine.set_command_submitter(std::rc::Rc::new(std::cell::RefCell::new(
-                crate::core::processors::liquidation::command_submitter::VecCommandSink(generated.clone()),
+                crate::core::processors::liquidation::command_submitter::TestCommandCollector(generated.clone()),
             )));
 
             let mut cmd = if_takeover_cmd(OrderAction::Bid, 100, 100);

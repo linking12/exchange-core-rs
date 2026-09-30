@@ -452,9 +452,9 @@ mod tests {
     const UID: i64 = 7;
 
     fn attach_collector(e: &mut LoanLiquidationEngine) -> Rc<RefCell<Vec<OrderCommand>>> {
-        use crate::core::processors::liquidation::command_submitter::VecCommandSink;
+        use crate::core::processors::liquidation::command_submitter::TestCommandCollector;
         let collected = Rc::new(RefCell::new(Vec::new()));
-        e.set_command_submitter(Rc::new(RefCell::new(VecCommandSink(collected.clone()))));
+        e.set_command_submitter(Rc::new(RefCell::new(TestCommandCollector(collected.clone()))));
         collected
     }
 

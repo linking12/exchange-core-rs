@@ -592,9 +592,9 @@ mod tests {
     const UID: i64 = 1;
 
     fn attach_collector(engine: &mut LiquidationEngine) -> Rc<RefCell<Vec<OrderCommand>>> {
-        use crate::core::processors::liquidation::command_submitter::VecCommandSink;
+        use crate::core::processors::liquidation::command_submitter::TestCommandCollector;
         let collected = Rc::new(RefCell::new(Vec::new()));
-        engine.set_command_submitter(Rc::new(RefCell::new(VecCommandSink(collected.clone()))));
+        engine.set_command_submitter(Rc::new(RefCell::new(TestCommandCollector(collected.clone()))));
         collected
     }
 

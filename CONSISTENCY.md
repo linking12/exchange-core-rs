@@ -361,6 +361,16 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 **验证**:Java `mvn verify` 全绿(519 单测 + 657 IT = 1176,0 fail);Rust 全量 + conformance 357 全绿。**无黄金向量变化**(无向量覆盖该 dust 场景,重生成结果不变)。回归护栏 `proportional_maker_fee_multi_maker_conserves_no_dust_{buy,sell}`(`fee_scale_k=1e6, maker_fee=500`,@100/@101 各 3 手被 6 手吃 → `is_global_zero()`;BUY 侧还原费改动即红)。
 
+### 7.16 Rust 内部重构 + 恢复健壮性(2026-09-30,无行为/parity 变化)
+
+两项 Rust-only 改动,均不改引擎行为、不动 Java、不涉黄金向量(Rust 全量 1521,0 fail):
+
+**(a) `recover()` 改为"全成功才写入"**:原 `read_risk_engine_payload` 逐字段写 `core` + `?` 早返,且 `recover` 先写 RE 再加载 ME;任一解析失败会留下"新 RE 状态 + 旧 ME 状态"的半改混合态并返回 `Err`。改为:RE 的 9 个字段先解析到局部、全成功后再统一赋给 `core`(函数自身原子);`recover` 把 ME 的加载+解析提到写 RE 之前(存入 `matching` 局部),最后才 `self.matching = matching`。**任何 `Err`(RE/ME 缺失或解析失败)返回时 `self` 完全未被改动**。当前所有调用方均 fresh 实例 + Err 即丢弃,故属预防性,消除"复用实例上 log-and-continue"的潜在坑。
+
+**(b) 强平命令回调 `CommandSubmitter` 可读性重构**:原实现套**两层 `Rc<RefCell>`**(外层 `CommandSubmitterHandle(Option<Rc<RefCell<dyn>>>)` + 内层 `VecCommandSink(Rc<RefCell<Vec>>)`),Java 视角很绕。收敛为:sink 自己拥有队列(`LocalCommandSubmitter { queue: Vec }`),`ExchangeCore` 删掉独立的 `pending_commands` 共享字段、改持有 `submitter: Rc<RefCell<dyn CommandSubmitter>>`,`drive_pending` 经 trait 的 `take_pending()` 排空 → **双层 Rc 收敛为单层**。按角色重命名 `VecCommandSink→LocalCommandSubmitter`、测试收集器 `CollectingSink→TestCommandCollector`。三件套各司其职、对应 Java 的"接口/实现类/字段引用",非冗余:`CommandSubmitterHandle` 让 trait 对象字段可 `#[derive(Default)]`(`LoanLiquidationEngine`/`RiskEngine` 的构造链依赖)+ 未接线时 submit 静默 no-op + 集中 6 处 submit 的判空样板;`LocalCommandSubmitter` 是进程内默认实现;trait 本身是覆盖点。测试 24 处 `out.borrow()` 零改动(`attach_collector` 换用 `TestCommandCollector`)。
+
+**记:`CommandSubmitter` 接缝与 Java 的刻意差异(供后续 parity 复审)**:Java `ExchangeCore.java:226` 的 submitter 是 `(cmd,onApplied)->api.submitCommand(cmd)`——生成的 FORCE/IF/ADL/LOAN_FORCE **重新投回 api/disruptor**(raft 部署即提议进共识),作为后续独立序号命令 apply,**Java 无本地队列、无 drive_pending**。Rust 进程内无 disruptor,故默认的 `LocalCommandSubmitter` 收集命令 + `drive_pending` 当场循环排空(cascade 顺序在单进程内确定,已由 conformance 覆盖)。**`CommandSubmitter` trait 即对齐 Java `setCommandSubmitter` 的可插拔接缝**:raft 部署时从公开的 `with_command_submitter` 注入"提议进共识"实现,覆盖默认的就地排空(即 `submit` 被 raft 覆盖)。属架构性差异,非缺口。
+
 ---
 
 ## 8. 命令流 DSL 参考

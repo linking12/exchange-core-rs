@@ -5,6 +5,9 @@ use crate::core::common::cmd::order_command::OrderCommand;
 
 pub trait CommandSubmitter {
     fn submit(&mut self, cmd: OrderCommand);
+    fn take_pending(&mut self) -> Vec<OrderCommand> {
+        Vec::new()
+    }
 }
 
 #[derive(Default, Clone)]
@@ -28,9 +31,27 @@ impl std::fmt::Debug for CommandSubmitterHandle {
     }
 }
 
-pub struct VecCommandSink(pub Rc<RefCell<Vec<OrderCommand>>>);
-impl CommandSubmitter for VecCommandSink {
+#[derive(Default)]
+pub struct LocalCommandSubmitter {
+    queue: Vec<OrderCommand>,
+}
+impl CommandSubmitter for LocalCommandSubmitter {
+    fn submit(&mut self, cmd: OrderCommand) {
+        self.queue.push(cmd);
+    }
+    fn take_pending(&mut self) -> Vec<OrderCommand> {
+        std::mem::take(&mut self.queue)
+    }
+}
+
+#[cfg(test)]
+pub struct TestCommandCollector(pub Rc<RefCell<Vec<OrderCommand>>>);
+#[cfg(test)]
+impl CommandSubmitter for TestCommandCollector {
     fn submit(&mut self, cmd: OrderCommand) {
         self.0.borrow_mut().push(cmd);
+    }
+    fn take_pending(&mut self) -> Vec<OrderCommand> {
+        std::mem::take(&mut *self.0.borrow_mut())
     }
 }
