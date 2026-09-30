@@ -183,6 +183,48 @@ fn scenario_multi_level_partial_and_full_fill_fixed_fee() {
 }
 
 #[test]
+fn proportional_maker_fee_multi_maker_conserves_no_dust_buy() {
+    const SELLER_A: i64 = 1;
+    const SELLER_B: i64 = 2;
+    const BUYER: i64 = 3;
+
+    let mut api = new_seeded_api(proportional_fee_spec(0, 500, 1_000_000));
+    for u in [SELLER_A, SELLER_B, BUYER] {
+        assert_eq!(api.add_user(u), CommandResultCode::Success);
+    }
+    assert_eq!(api.balance_adjustment(SELLER_A, BASE, 100, 1), CommandResultCode::Success);
+    assert_eq!(api.balance_adjustment(SELLER_B, BASE, 100, 2), CommandResultCode::Success);
+    assert_eq!(api.balance_adjustment(BUYER, QUOTE, 1_000_000, 3), CommandResultCode::Success);
+
+    api.place_order(PlaceOrderRequest { order_id: 1, uid: SELLER_A, symbol: SYMBOL, price: 100, size: 3, reserve_bid_price: 0, action: OrderAction::Ask, order_type: OrderType::Gtc });
+    api.place_order(PlaceOrderRequest { order_id: 2, uid: SELLER_B, symbol: SYMBOL, price: 101, size: 3, reserve_bid_price: 0, action: OrderAction::Ask, order_type: OrderType::Gtc });
+    api.place_order(PlaceOrderRequest { order_id: 3, uid: BUYER, symbol: SYMBOL, price: 101, size: 6, reserve_bid_price: 101, action: OrderAction::Bid, order_type: OrderType::Gtc });
+
+    assert_invariants(&api);
+}
+
+#[test]
+fn proportional_maker_fee_multi_maker_conserves_no_dust_sell() {
+    const BUYER_A: i64 = 1;
+    const BUYER_B: i64 = 2;
+    const SELLER: i64 = 3;
+
+    let mut api = new_seeded_api(proportional_fee_spec(0, 500, 1_000_000));
+    for u in [BUYER_A, BUYER_B, SELLER] {
+        assert_eq!(api.add_user(u), CommandResultCode::Success);
+    }
+    assert_eq!(api.balance_adjustment(BUYER_A, QUOTE, 1_000_000, 1), CommandResultCode::Success);
+    assert_eq!(api.balance_adjustment(BUYER_B, QUOTE, 1_000_000, 2), CommandResultCode::Success);
+    assert_eq!(api.balance_adjustment(SELLER, BASE, 100, 3), CommandResultCode::Success);
+
+    api.place_order(PlaceOrderRequest { order_id: 1, uid: BUYER_A, symbol: SYMBOL, price: 101, size: 3, reserve_bid_price: 101, action: OrderAction::Bid, order_type: OrderType::Gtc });
+    api.place_order(PlaceOrderRequest { order_id: 2, uid: BUYER_B, symbol: SYMBOL, price: 100, size: 3, reserve_bid_price: 100, action: OrderAction::Bid, order_type: OrderType::Gtc });
+    api.place_order(PlaceOrderRequest { order_id: 3, uid: SELLER, symbol: SYMBOL, price: 100, size: 6, reserve_bid_price: 0, action: OrderAction::Ask, order_type: OrderType::Gtc });
+
+    assert_invariants(&api);
+}
+
+#[test]
 fn scenario_reduce_order_then_full_fill_proportional_fee() {
     const MAKER: i64 = 1;
     const TAKER: i64 = 2;

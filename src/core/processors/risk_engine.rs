@@ -1085,7 +1085,7 @@ impl RiskEngine {
 
         let mut taker_notional: i128 = 0;
         let mut taker_size: i64 = 0;
-        let mut maker_notional: i128 = 0;
+        let mut maker_fee_total: i64 = 0;
         let mut maker_size: i64 = 0;
 
         let mut node = Some(first_trade_mte);
@@ -1106,14 +1106,15 @@ impl RiskEngine {
                 );
                 let hold_quote = spec.size_price_to_currency_scale(hold_quote_raw, quote_currency_spec);
 
-                let quote_refund_raw = arithmetic::calculate_amount_bid_release_corr_maker(
-                    ev.size,
-                    ev.bidder_hold_price,
-                    ev.price,
-                    spec.taker_fee,
-                    spec.maker_fee,
-                    spec.fee_scale_k,
-                );
+                // 释放整块 taker 费预留，逐笔按成交价收 maker 费（拆开，替代 corr_maker 的单 ceil 纠缠，费 dust 逐笔精确）。
+                let reserved_taker_fee =
+                    arithmetic::calculate_taker_fee(ev.size, ev.bidder_hold_price, spec.taker_fee, spec.fee_scale_k);
+                let maker_fee = arithmetic::calculate_maker_fee(ev.size, ev.price, spec.maker_fee, spec.fee_scale_k);
+                maker_fee_total += maker_fee;
+                let quote_refund_raw =
+                    arithmetic::mul_exact(ev.size, arithmetic::sub_exact(ev.bidder_hold_price, ev.price))
+                        + reserved_taker_fee
+                        - maker_fee;
                 let quote_refund = spec.size_price_to_currency_scale(quote_refund_raw, quote_currency_spec);
 
                 maker_up.add_to_locked(quote_currency, -hold_quote);
@@ -1133,7 +1134,6 @@ impl RiskEngine {
                 fund_events.push(Self::spot_snapshot_event(FundEventType::Transfer, ev.maker_order_id, maker_up, base_currency, ssp, base_currency_spec, spec.symbol_id));
             }
 
-            maker_notional += ev.size as i128 * ev.price as i128;
             maker_size += ev.size;
 
             node = ev.next.as_deref();
@@ -1173,21 +1173,8 @@ impl RiskEngine {
         }
 
         if taker_size != 0 || maker_size != 0 {
-            let avg_maker_price = if maker_size > 0 {
-                i64::try_from(maker_notional / maker_size as i128)
-                    .unwrap_or_else(|_| panic!("overflow narrowing avg_maker_price"))
-            } else {
-                0
-            };
-            let maker_fee = arithmetic::calculate_maker_fee(
-                maker_size,
-                avg_maker_price,
-                spec.maker_fee,
-                spec.fee_scale_k,
-            );
-
             let fee_sum = taker_fee
-                .checked_add(maker_fee)
+                .checked_add(maker_fee_total)
                 .unwrap_or_else(|| panic!("overflow: taker_fee + maker_fee"));
             let fee_scaled = spec.size_price_to_currency_scale(fee_sum, quote_currency_spec);
             *fees.entry(quote_currency).or_insert(0) += fee_scaled;
@@ -1212,7 +1199,7 @@ impl RiskEngine {
         let mut taker_notional: i128 = 0;
         let mut taker_hold_notional: i128 = 0;
         let mut taker_size: i64 = 0;
-        let mut maker_notional: i128 = 0;
+        let mut maker_fee_total: i64 = 0;
         let mut maker_size: i64 = 0;
 
         let mut node = Some(first_trade_mte);
@@ -1242,6 +1229,7 @@ impl RiskEngine {
                     spec.maker_fee,
                     spec.fee_scale_k,
                 );
+                maker_fee_total += fee;
                 let to_be_added = spec.size_price_to_currency_scale(quote_gained - fee, quote_currency_spec);
                 maker_up.add_to_account(quote_currency, to_be_added);
 
@@ -1249,7 +1237,6 @@ impl RiskEngine {
                 fund_events.push(Self::spot_snapshot_event(FundEventType::Transfer, ev.maker_order_id, maker_up, base_currency, ssp, base_currency_spec, spec.symbol_id));
             }
 
-            maker_notional += ev.size as i128 * ev.price as i128;
             maker_size += ev.size;
 
             node = ev.next.as_deref();
@@ -1322,21 +1309,8 @@ impl RiskEngine {
         }
 
         if taker_size != 0 || maker_size != 0 {
-            let avg_maker_price = if maker_size > 0 {
-                i64::try_from(maker_notional / maker_size as i128)
-                    .unwrap_or_else(|_| panic!("overflow narrowing avg_maker_price"))
-            } else {
-                0
-            };
-            let maker_fee = arithmetic::calculate_maker_fee(
-                maker_size,
-                avg_maker_price,
-                spec.maker_fee,
-                spec.fee_scale_k,
-            );
-
             let fee_sum = taker_fee
-                .checked_add(maker_fee)
+                .checked_add(maker_fee_total)
                 .unwrap_or_else(|| panic!("overflow: taker_fee + maker_fee"));
             let fee_scaled = spec.size_price_to_currency_scale(fee_sum, quote_currency_spec);
             *fees.entry(quote_currency).or_insert(0) += fee_scaled;

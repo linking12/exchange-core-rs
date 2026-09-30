@@ -174,28 +174,6 @@ pub fn calculate_amount_bid_taker_fee_for_budget(
     add_exact(budget_amount, fee)
 }
 
-pub fn calculate_amount_bid_release_corr_maker(
-    size: i64,
-    hold_price: i64,
-    trade_price: i64,
-    taker_fee: i64,
-    maker_fee: i64,
-    fee_scale_k: i64,
-) -> i64 {
-    let trade_amount_diff = mul_exact(size, sub_exact(hold_price, trade_price));
-    let fee_diff = if fee_scale_k == 0 {
-        mul_exact(size, sub_exact(taker_fee, maker_fee))
-    } else {
-
-        let inner_numer = sub_exact(
-            mul_exact(hold_price, taker_fee),
-            mul_exact(trade_price, maker_fee),
-        );
-        ceil_mul_div(size, inner_numer, fee_scale_k)
-    };
-    add_exact(trade_amount_diff, fee_diff)
-}
-
 pub fn is_ask_price_too_low(price: i64, taker_fee: i64, fee_scale_k: i64) -> bool {
     if fee_scale_k == 0 {
         return price < taker_fee;
@@ -712,19 +690,6 @@ mod tests {
         assert_eq!(
             calculate_amount_bid_taker_fee_for_budget(100_000_000, 300_000_000_000_000_000, 500, 1_000_000),
             300_000_000_000_000_000 + 150_000_000_000_000
-        );
-    }
-
-    #[test]
-    fn calculate_amount_bid_release_corr_maker_fixed_fee_doc_example() {
-        assert_eq!(calculate_amount_bid_release_corr_maker(100, 5, 4, 2, 1, 0), 200);
-    }
-
-    #[test]
-    fn calculate_amount_bid_release_corr_maker_proportional_fee_doc_example() {
-        assert_eq!(
-            calculate_amount_bid_release_corr_maker(100, 5, 4, 100_000, 10_000, 1_000_000),
-            146
         );
     }
 

@@ -349,7 +349,17 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 ### 7.14 正确性复审(2026-09-30):修 ADL `risk_score` 零保证金仓除零崩溃(双侧同步)
 
-正确性 bug-hunt(4 路:算术/撮合/清算·ADL·funding/loan)。撮合(生产 Direct)、loan、大部分路径 CLEAN;**抓到一处可达除零崩溃**:`LiquidationService::risk_score`(`liquidation_service.rs:234`)`actual_leverage = open_price_sum / open_init_margin_sum`,而 `open_init_margin_sum` 在 `calculate_init_margin` 未配置路径 `notional/leverage` 于 `notional<leverage`(小额/高杠杆)时**截断为 0** → 零保证金仓若成为盈利 ADL 对手方,`AdlCommandProcessor` 打分时除零 panic。**Java 逐字节同款**(`LiquidationService.java:211` 同裸除,`ADLCommandProcessor.java:70` 排序时崩),属两侧共享的潜在崩溃(现有守恒 proptest/黄金向量从不构造零保证金对手方,故漏)。**修(双侧同步,保 byte-parity)**:ADL 候选过滤加 `open_init_margin_sum != 0`(Java `pos.openInitMarginSum == 0 → return false`)——退化仓不参与 ADL 排序(语义比"`actual_leverage=0` 守卫"更清:不是零杠杆,是退化仓不排序),`risk_score` 再也收不到零分母。守恒不受影响(ADL 选谁减都守恒;退化仓量级可忽略)。回归护栏 `collect_input_excludes_zero_init_margin_and_does_not_panic`(还原过滤即 panic → 红)。**无黄金向量变化**(无向量触发该退化态,conformance 357 仍全绿),故不重生成。同轮另记:现货比例 maker 费"每笔 ceil 扣 vs 费池聚合均价单次 ceil 记"的 dust 级守恒微漏(`RiskEngine.java:1341`/Rust `risk_engine.rs:1331` 两侧同款,`fee_scale_k>0 且 maker_fee>0 且 ≥2 笔 maker 成交`可达)——**待复审**,若修需双侧改费池为每笔累加 + 重生成向量。
+正确性 bug-hunt(4 路:算术/撮合/清算·ADL·funding/loan)。撮合(生产 Direct)、loan、大部分路径 CLEAN;**抓到一处可达除零崩溃**:`LiquidationService::risk_score`(`liquidation_service.rs:234`)`actual_leverage = open_price_sum / open_init_margin_sum`,而 `open_init_margin_sum` 在 `calculate_init_margin` 未配置路径 `notional/leverage` 于 `notional<leverage`(小额/高杠杆)时**截断为 0** → 零保证金仓若成为盈利 ADL 对手方,`AdlCommandProcessor` 打分时除零 panic。**Java 逐字节同款**(`LiquidationService.java:211` 同裸除,`ADLCommandProcessor.java:70` 排序时崩),属两侧共享的潜在崩溃(现有守恒 proptest/黄金向量从不构造零保证金对手方,故漏)。**修(双侧同步,保 byte-parity)**:ADL 候选过滤加 `open_init_margin_sum != 0`(Java `pos.openInitMarginSum == 0 → return false`)——退化仓不参与 ADL 排序(语义比"`actual_leverage=0` 守卫"更清:不是零杠杆,是退化仓不排序),`risk_score` 再也收不到零分母。守恒不受影响(ADL 选谁减都守恒;退化仓量级可忽略)。回归护栏 `collect_input_excludes_zero_init_margin_and_does_not_panic`(还原过滤即 panic → 红)。**无黄金向量变化**(无向量触发该退化态,conformance 357 仍全绿),故不重生成。同轮另记:现货比例 maker 费"每笔 ceil 扣 vs 费池聚合均价单次 ceil 记"的 dust 级守恒微漏——已在 §7.15 修复。
+
+### 7.15 正确性复审(2026-09-30):修现货比例 maker 费 dust(逐笔收费,双侧同步 + 删 corr_maker)
+
+**问题**:现货撮合 `handleMatcherEventsExchange{Buy,Sell}` 里,maker 逐笔按成交价扣 maker 费(`⌈size·price·makerFee/F⌉`),但费池按**聚合均价单次** `⌈Σsize·avgP·makerFee/F⌉` 入账。因 `Σ⌈·⌉ ≥ ⌈Σ·⌉`,两者差一个 dust:**BUY 侧 maker 无 quote 冻结缓冲 → dust 直接销毁(破坏守恒);SELL 侧沉入 maker `exchangeLocked`、靠 SUSPEND sweep 兜(全局守恒但延迟)**。`fee_scale_k>0 且 maker_fee>0 且 ≥2 笔 maker 不同价`可达;两侧逐字节同款,现有 fixed-fee / maker_fee=0 的测试与向量都不覆盖,故一直没抓到(正确性 agent 抓到 BUY 那条)。
+
+**为何不改 taker 侧**:taker 的保证金在 R1 下单时按**聚合**预留(成交前不知逐笔明细),若 taker 也逐笔结算(`Σ⌈·⌉`)会比预留多扣 → 破坏 NSF 不变量。故 taker 保持聚合;本金 scale 转换 dust(taker 聚合 vs maker 逐笔,**仅非 identity scale**)仍沉 `exchangeLocked`、SUSPEND sweep 兜底(此为架构性、不可在结算时消)。
+
+**修(双侧同步)**:费池改收**逐笔 maker 费之和** `takerFee + Σ makerFee`(不再按均价聚合重算)。SELL 侧额外**拆开** `calculateAmountBidReleaseCorrMaker`(它把"释放 taker 费预留"与"收 maker 费"挤进同一个 ceil)为:释放整块 `calculateTakerFee(size, bidderHoldPrice)` − 逐笔 `calculateMakerFee(size, tradePrice)`。该 helper 拆分后**无调用者,已双侧删除**(Java `CoreArithmeticUtils` + Rust `core_arithmetic_utils` 的方法、单测、`.md` 文档引用一并清理)。两 handler 同时整理成清晰三阶段结构。**identity scale 下手续费逐笔精确、零 dust**。
+
+**验证**:Java `mvn verify` 全绿(519 单测 + 657 IT = 1176,0 fail);Rust 全量 + conformance 357 全绿。**无黄金向量变化**(无向量覆盖该 dust 场景,重生成结果不变)。回归护栏 `proportional_maker_fee_multi_maker_conserves_no_dust_{buy,sell}`(`fee_scale_k=1e6, maker_fee=500`,@100/@101 各 3 手被 6 手吃 → `is_global_zero()`;BUY 侧还原费改动即红)。
 
 ---
 
