@@ -56,6 +56,7 @@ pub enum CommandResultCode {
     UserMgmtUserNotSuspended,
     UserMgmtUserAlreadySuspended,
     UserMgmtUserNotFound,
+    IncorrectCommandFormat,
 }
 
 impl CommandResultCode {
@@ -117,6 +118,7 @@ impl CommandResultCode {
             CommandResultCode::UserMgmtUserNotSuspended => -4132,
             CommandResultCode::UserMgmtUserAlreadySuspended => -4133,
             CommandResultCode::UserMgmtUserNotFound => -4201,
+            CommandResultCode::IncorrectCommandFormat => -9060,
         }
     }
 }
@@ -190,5 +192,10 @@ mod tests {
         assert_eq!(CommandResultCode::LoanInvalidSymbolType.code(), -6070);
         assert_eq!(CommandResultCode::LoanNumeraireNotConfigured.code(), -6080);
         assert_eq!(CommandResultCode::LoanNotImplemented.code(), -6099);
+    }
+
+    #[test]
+    fn incorrect_command_format_is_rust_only_code() {
+        assert_eq!(CommandResultCode::IncorrectCommandFormat.code(), -9060);
     }
 }

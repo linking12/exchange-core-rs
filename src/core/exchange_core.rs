@@ -16,6 +16,8 @@ use crate::core::processors::risk_engine::RiskEngine;
 use crate::core::snapshot::serialization_processor::{
     InMemorySerializationProcessor, SerializationProcessor, SerializedModuleType,
 };
+use crate::core::common::cmd::command_result_code::CommandResultCode;
+use crate::core::snapshot::chronicle_reader::ChronicleError;
 
 pub trait ResultsConsumer {
     fn consume(&mut self, cmd: &OrderCommand, seq: i64, ssp: &SymbolSpecificationProvider, ups: &UserProfileService);
@@ -25,6 +27,24 @@ impl<C: ResultsConsumer + ?Sized> ResultsConsumer for Rc<RefCell<C>> {
     fn consume(&mut self, cmd: &OrderCommand, seq: i64, ssp: &SymbolSpecificationProvider, ups: &UserProfileService) {
         self.borrow_mut().consume(cmd, seq, ssp, ups);
     }
+}
+
+fn validate_external_command(cmd: &OrderCommand) -> Option<CommandResultCode> {
+    use crate::core::common::cmd::order_command_type::OrderCommandType as T;
+    let ok = match cmd.command {
+        T::PlaceOrder | T::ClosePosition | T::ForceLiquidation => cmd.action.is_some() && cmd.order_type.is_some(),
+        T::MarginAdjustment | T::SettleFundingfees | T::IfTakeover | T::AutoDeleveraging => cmd.action.is_some(),
+        _ => true,
+    };
+    (!ok).then_some(CommandResultCode::IncorrectCommandFormat)
+}
+
+#[derive(Debug)]
+pub enum RecoveryError {
+    RiskEngineSnapshotNotFound,
+    RiskEnginePayloadParse(ChronicleError),
+    MatchingEngineSnapshotNotFound,
+    MatchingEnginePayloadParse(ChronicleError),
 }
 
 pub struct ExchangeCore {
@@ -96,9 +116,13 @@ impl ExchangeCore {
             self.reset();
             cmd.result_code = Some(crate::core::common::cmd::command_result_code::CommandResultCode::Success);
             log::debug!("process_command: RESET cleared all engine business state");
-            let seq = self.results_seq;
-            self.results_seq += 1;
-            self.results_consumer.consume(cmd, seq, &self.ssp, &self.ups);
+            self.emit_result(cmd);
+            return;
+        }
+
+        if let Some(code) = validate_external_command(cmd) {
+            cmd.result_code = Some(code);
+            self.emit_result(cmd);
             return;
         }
 
@@ -128,6 +152,10 @@ impl ExchangeCore {
         self.risk.pre_process_command(cmd, &mut self.ups, &self.ssp);
         self.matching.process_order(cmd);
         self.risk.handler_risk_release(cmd, &mut self.ups, &self.ssp);
+        self.emit_result(cmd);
+    }
+
+    fn emit_result(&mut self, cmd: &OrderCommand) {
         let seq = self.results_seq;
         self.results_seq += 1;
         self.results_consumer.consume(cmd, seq, &self.ssp, &self.ups);
@@ -172,20 +200,21 @@ impl ExchangeCore {
         ok_re && ok_me && ok_cs
     }
 
-    pub fn recover(&mut self, snapshot_id: i64, instance_id: i32) {
+    pub fn recover(&mut self, snapshot_id: i64, instance_id: i32) -> Result<(), RecoveryError> {
         use crate::core::snapshot::chronicle_reader::ChronicleReader;
         use crate::core::snapshot::marshalling::ChronicleMarshallable;
         let re = self
             .ser_proc
             .load_data(snapshot_id, SerializedModuleType::RiskEngine, instance_id)
-            .expect("RE snapshot module not found");
-        crate::core::processors::risk_engine::read_risk_engine_payload(&re, self).expect("RE payload parse failed");
+            .ok_or(RecoveryError::RiskEngineSnapshotNotFound)?;
+        crate::core::processors::risk_engine::read_risk_engine_payload(&re, self)
+            .map_err(RecoveryError::RiskEnginePayloadParse)?;
         let me = self
             .ser_proc
             .load_data(snapshot_id, SerializedModuleType::MatchingEngineRouter, instance_id)
-            .expect("ME snapshot module not found");
-        self.matching =
-            MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me)).expect("ME payload parse failed");
+            .ok_or(RecoveryError::MatchingEngineSnapshotNotFound)?;
+        self.matching = MatchingEngineRouter::chronicle_read(&mut ChronicleReader::new(&me))
+            .map_err(RecoveryError::MatchingEnginePayloadParse)?;
         if let Some(cs) = self.ser_proc.load_data(snapshot_id, SerializedModuleType::ExchangeCore, instance_id) {
             match ChronicleReader::new(&cs).read_i64() {
                 Ok(seq) => self.results_seq = seq,
@@ -193,6 +222,7 @@ impl ExchangeCore {
             }
         }
         self.restore_non_replicated_state();
+        Ok(())
     }
 
     fn restore_non_replicated_state(&mut self) {
@@ -414,6 +444,45 @@ mod tests {
 
         assert_eq!(cancel.result_code, Some(CommandResultCode::Success));
         assert_eq!(core.ups.get(1).unwrap().locked(QUOTE), 0, "R2 must release all locked funds");
+    }
+
+    #[test]
+    fn place_order_missing_action_is_rejected_not_panic() {
+        let mut core = seeded_core();
+        core.ups.add_empty_user_profile(1);
+        let mut cmd = OrderCommand {
+            command: OrderCommandType::PlaceOrder,
+            order_id: 1,
+            uid: 1,
+            symbol: SYMBOL,
+            price: 100,
+            size: 1,
+            order_type: Some(OrderType::Gtc),
+            ..Default::default()
+        };
+        core.process_command(&mut cmd);
+        assert_eq!(cmd.result_code, Some(CommandResultCode::IncorrectCommandFormat));
+        assert!(cmd.matcher_event.is_none());
+    }
+
+    #[test]
+    fn place_order_missing_order_type_is_rejected_not_panic() {
+        let mut core = seeded_core();
+        core.ups.add_empty_user_profile(1);
+        let mut cmd = OrderCommand {
+            command: OrderCommandType::PlaceOrder,
+            order_id: 1,
+            uid: 1,
+            symbol: SYMBOL,
+            price: 100,
+            size: 1,
+            action: Some(OrderAction::Bid),
+            reserve_bid_price: 100,
+            ..Default::default()
+        };
+        core.process_command(&mut cmd);
+        assert_eq!(cmd.result_code, Some(CommandResultCode::IncorrectCommandFormat));
+        assert!(cmd.matcher_event.is_none());
     }
 }
 
@@ -1258,7 +1327,7 @@ mod snapshot_tests {
         let mut core = build_rich_core(Box::new(shared.clone()));
         assert!(core.persist(1, 0));
         let mut restored = ExchangeCore::new(); restored.with_serialization_processor(Box::new(shared.clone()));
-        restored.recover(1, 0);
+        restored.recover(1, 0).unwrap();
 
         assert!(restored.persist(2, 0));
         let m_re = SerializedModuleType::RiskEngine;
@@ -1273,7 +1342,7 @@ mod snapshot_tests {
         assert_eq!(restored.risk.liquidation_service.notionals[&FUT].available, 500);
         let mut ob = OrderCommand { command: OrderCommandType::OrderBookRequest, symbol: FUT, size: 10, ..Default::default() };
         let mut restored2 = ExchangeCore::new(); restored2.with_serialization_processor(Box::new(shared.clone()));
-        restored2.recover(1, 0);
+        restored2.recover(1, 0).unwrap();
         restored2.process_command(&mut ob);
         let md = ob.market_data.unwrap();
         assert!(md.bid_prices.contains(&80), "resting order book state must be restored with the snapshot");
@@ -1302,7 +1371,7 @@ mod snapshot_tests {
 
         let mut restored = ExchangeCore::new();
         restored.with_serialization_processor(Box::new(shared.clone()));
-        restored.recover(1, 0);
+        restored.recover(1, 0).unwrap();
 
         assert_eq!(
             restored.results_seq,
@@ -1325,7 +1394,7 @@ mod snapshot_tests {
         let mut core = build_rich_core(Box::new(shared.clone()));
         assert!(core.persist(1, 0));
         let mut restored = ExchangeCore::new(); restored.with_serialization_processor(Box::new(shared.clone()));
-        restored.recover(1, 0);
+        restored.recover(1, 0).unwrap();
         restored.risk.liquidation_engine.is_running = true;
 
         let mut mk = fut_order(50, U_MAKER, 92, 10, true, 10);
@@ -1339,6 +1408,15 @@ mod snapshot_tests {
             !restored.ups.get(U_LONG).unwrap().positions.contains_key(&FUT),
             "恢复后 targeted 索引生效，U_LONG 被强平平仓"
         );
+    }
+
+    #[test]
+    fn recover_missing_re_snapshot_returns_err_not_panic() {
+        let shared = InMemorySerializationProcessor::new();
+        let mut core = ExchangeCore::new();
+        core.with_serialization_processor(Box::new(shared.clone()));
+        let res = core.recover(1, 0);
+        assert!(matches!(res, Err(RecoveryError::RiskEngineSnapshotNotFound)));
     }
 }
 

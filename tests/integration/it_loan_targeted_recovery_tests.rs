@@ -115,7 +115,7 @@ mod tests {
         }
 
         let mut r = ExchangeCore::new(); r.with_serialization_processor(Box::new(shared.clone()));
-        r.recover(1, 0);
+        r.recover(1, 0).unwrap();
 
         assert!(
             r.risk

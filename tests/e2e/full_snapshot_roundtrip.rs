@@ -199,7 +199,7 @@ fn all_subsystem_state_survives_snapshot_roundtrip_byte_identical() {
 
     let mut follower = ExchangeCore::new();
     follower.with_serialization_processor(Box::new(shared.clone()));
-    follower.recover(1, 0);
+    follower.recover(1, 0).unwrap();
     assert!(follower.persist(2, 0));
 
     for module in [SerializedModuleType::RiskEngine, SerializedModuleType::MatchingEngineRouter, SerializedModuleType::ExchangeCore] {

@@ -139,7 +139,7 @@ mod tests {
         assert!(core.persist(1, 0));
 
         let mut recovered = ExchangeCore::new(); recovered.with_serialization_processor(Box::new(shared.clone()));
-        recovered.recover(1, 0);
+        recovered.recover(1, 0).unwrap();
 
         assert!(recovered.persist(2, 0));
         assert_eq!(
@@ -213,7 +213,7 @@ mod tests {
         assert!(core.persist(1, 0));
 
         let mut r = ExchangeCore::new(); r.with_serialization_processor(Box::new(shared.clone()));
-        r.recover(1, 0);
+        r.recover(1, 0).unwrap();
         assert!(r.persist(2, 0));
         assert_eq!(
             shared.load_data(2, SerializedModuleType::RiskEngine, 0),

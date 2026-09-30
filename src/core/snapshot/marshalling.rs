@@ -318,7 +318,7 @@ mod tests {
         assert!(dir.join("snapshot_1_RE_0.dat").exists());
         assert!(dir.join("snapshot_1_ME_0.dat").exists());
         let mut recovered = ExchangeCore::new(); recovered.with_serialization_processor(Box::new(FileSerializationProcessor::new(&dir)));
-        recovered.recover(1, 0);
+        recovered.recover(1, 0).unwrap();
 
         assert!(recovered.persist(2, 0));
         let read = |id: i64, code: &str| std::fs::read(dir.join(format!("snapshot_{id}_{code}_0.dat"))).unwrap();
