@@ -347,6 +347,10 @@ Rust 侧完全确定(单管线同步)。Java 侧的异步部分靠上面的稳�
 
 `port-parity-review` skill 四子系统复审(funding/强平·ADL·IF/loan/settlement+fees):前三者三项检查全 CLEAN;**settlement+fees 抓到一处 MEDIUM 状态不变量 gap**——`LiquidationEngine::rebuild_indices`(快照恢复重建索引)有 `if pos.open_volume == 0 { continue; }`,**跳过挂单态(open_volume==0)期货仓**。而 Java `updateProvider`→`onPositionOpened`(`RiskEngine.java:493` 在 `newPosition` 提交时、`pendingHold` 之前登记,**无 openVolume 过滤**)与 Rust 自身 live `place_order`(`is_new_position` 时无条件 `on_position_opened`)**都登记挂单仓**。后果:快照含挂单仓 → 恢复被跳过 → 之后成交(`settle_margin_position_event` 不调 `on_position_opened`)→ 该仓永久缺失于索引 → 定向强平/ funding 扫描(`cmd.symbol>=0`)漏掉,仅周期性全量 `LIQUIDATION_SCAN`(`symbol<0`)兜底(漂移非丢钱,per-command conformance 抓不到)。**修**:删掉该 `open_volume==0` 跳过,登记所有期货仓 = 对齐 Java + 对齐 Rust live 路径。**注**:旧快照测试曾断言挂单仓被排除、注释误标"aligned with Java",已翻转为"必须被重建"(`snapshot_roundtrip_*` 内 `holders.contains(&U_MAKER)`)= 回归护栏(还原 filter 即红)。
 
+### 7.14 正确性复审(2026-09-30):修 ADL `risk_score` 零保证金仓除零崩溃(双侧同步)
+
+正确性 bug-hunt(4 路:算术/撮合/清算·ADL·funding/loan)。撮合(生产 Direct)、loan、大部分路径 CLEAN;**抓到一处可达除零崩溃**:`LiquidationService::risk_score`(`liquidation_service.rs:234`)`actual_leverage = open_price_sum / open_init_margin_sum`,而 `open_init_margin_sum` 在 `calculate_init_margin` 未配置路径 `notional/leverage` 于 `notional<leverage`(小额/高杠杆)时**截断为 0** → 零保证金仓若成为盈利 ADL 对手方,`AdlCommandProcessor` 打分时除零 panic。**Java 逐字节同款**(`LiquidationService.java:211` 同裸除,`ADLCommandProcessor.java:70` 排序时崩),属两侧共享的潜在崩溃(现有守恒 proptest/黄金向量从不构造零保证金对手方,故漏)。**修(双侧同步,保 byte-parity)**:ADL 候选过滤加 `open_init_margin_sum != 0`(Java `pos.openInitMarginSum == 0 → return false`)——退化仓不参与 ADL 排序(语义比"`actual_leverage=0` 守卫"更清:不是零杠杆,是退化仓不排序),`risk_score` 再也收不到零分母。守恒不受影响(ADL 选谁减都守恒;退化仓量级可忽略)。回归护栏 `collect_input_excludes_zero_init_margin_and_does_not_panic`(还原过滤即 panic → 红)。**无黄金向量变化**(无向量触发该退化态,conformance 357 仍全绿),故不重生成。同轮另记:现货比例 maker 费"每笔 ceil 扣 vs 费池聚合均价单次 ceil 记"的 dust 级守恒微漏(`RiskEngine.java:1341`/Rust `risk_engine.rs:1331` 两侧同款,`fee_scale_k>0 且 maker_fee>0 且 ≥2 笔 maker 成交`可达)——**待复审**,若修需双侧改费池为每笔累加 + 重生成向量。
+
 ---
 
 ## 8. 命令流 DSL 参考

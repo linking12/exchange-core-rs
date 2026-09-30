@@ -105,6 +105,7 @@ impl AdlCommandProcessor {
             .filter(|pos| {
                 pos.open_volume > 0
                     && pos.open_volume > pos.pending_adl_size
+                    && pos.open_init_margin_sum != 0
                     && !pos.direction.is_same_as_action(action)
                     && LiquidationService::unrealized_pnl(pos, bankruptcy_price) > 0
             })
@@ -253,6 +254,13 @@ mod tests {
     fn collect_input_filters_out_when_pending_adl_size_covers_open_volume() {
         let fully_reserved = candidate(1, PositionDirection::Short, 10, 1500, 100, 100, 10);
         let picks = AdlCommandProcessor::collect_input(vec![fully_reserved], OrderAction::Bid, 100, 100);
+        assert!(picks.is_empty());
+    }
+
+    #[test]
+    fn collect_input_excludes_zero_init_margin_and_does_not_panic() {
+        let zero_margin = candidate(1, PositionDirection::Short, 10, 1500, 0, 100, 0);
+        let picks = AdlCommandProcessor::collect_input(vec![zero_margin], OrderAction::Bid, 100, 100);
         assert!(picks.is_empty());
     }
 
